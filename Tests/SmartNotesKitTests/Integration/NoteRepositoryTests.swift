@@ -143,3 +143,44 @@ import Testing
         #expect(try repo.summaries(in: .active).count == notes.count - 1)
     }
 }
+
+@MainActor
+@Suite struct NoteRepositoryWritePathTests {
+    private let now = Date(timeIntervalSince1970: 1_790_000_000)
+
+    /// The autosave path must not clobber metadata changed in the meantime.
+    @Test func contentAndMetadataWritesDoNotOverwriteEachOther() throws {
+        let repo = try AppDependencies.inMemory().notes
+        var note = SampleData.notes(now: now)[1]
+        try repo.save(note)
+
+        try repo.updateMetadata(id: note.id) { $0.isPinned = true; $0.priority = .high }
+        note.blocks[0].content = RichText(plain: "Edited later")
+        try repo.updateContent(id: note.id, title: "New title", blocks: note.blocks, updatedAt: now.addingTimeInterval(5))
+
+        let fetched = try #require(try repo.note(id: note.id))
+        #expect(fetched.isPinned && fetched.priority == .high)
+        #expect(fetched.title == "New title")
+        #expect(fetched.blocks[0].content.plainText == "Edited later")
+        #expect(fetched.updatedAt == now.addingTimeInterval(5))
+        #expect(try repo.search("edited later", in: .active).map(\.id) == [note.id])
+    }
+
+    @Test func metadataUpdateKeepsUpdatedAt() throws {
+        let repo = try AppDependencies.inMemory().notes
+        let note = SampleData.notes(now: now)[0]
+        try repo.save(note)
+        try repo.updateMetadata(id: note.id) { $0.manualRank = "zz" }
+        let summary = try #require(try repo.summaries(in: .active).first)
+        #expect(summary.manualRank == "zz")
+        #expect(summary.updatedAt == note.updatedAt)
+    }
+
+    @Test func writesToMissingNoteThrow() throws {
+        let repo = try AppDependencies.inMemory().notes
+        #expect(throws: PersistenceError.self) {
+            try repo.updateContent(id: UUID(), title: "", blocks: [], updatedAt: now)
+        }
+        #expect(throws: PersistenceError.self) { try repo.updateMetadata(id: UUID()) { _ in } }
+    }
+}

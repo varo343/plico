@@ -1,0 +1,63 @@
+import AppKit
+import SwiftUI
+
+/// Menu bar commands. `app` is nil while the store failed to open.
+public struct AppCommands: Commands {
+    private let app: AppModel?
+
+    public init(app: AppModel?) {
+        self.app = app
+    }
+
+    public var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Note") { app?.createNote() }
+                .keyboardShortcut("n")
+                .disabled(app == nil)
+        }
+        CommandGroup(replacing: .saveItem) {
+            Button("Save") { app?.notes.flush() }
+                .keyboardShortcut("s")
+                .disabled(app == nil)
+        }
+        CommandMenu("Note") {
+            Group {
+                Button("Search Notes") {
+                    app?.destination = .notes
+                    app?.notes.requestSearchFocus()
+                }
+                .keyboardShortcut("f")
+                Divider()
+                Button("Pin / Unpin") { withSelection { app?.notes.togglePin($0) } }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                Button("Duplicate") { withSelection { app?.notes.duplicate($0) } }
+                    .keyboardShortcut("d")
+                Button("Move to Trash") { moveToTrashUnlessEditingText() }
+                    .keyboardShortcut(.delete)
+            }
+            .disabled(app == nil)
+        }
+        CommandGroup(after: .sidebar) {
+            ForEach(Array(SidebarDestination.allCases.enumerated()), id: \.element) { index, destination in
+                Button(destination.title) { app?.destination = destination }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+            }
+            Divider()
+        }
+    }
+
+    private func withSelection(_ body: (UUID) -> Void) {
+        guard let app, app.destination == .notes, let id = app.notes.selectedNoteID else { return }
+        body(id)
+    }
+
+    /// ⌘⌫ is also "delete to line start" in text. Menu shortcuts fire before
+    /// the text view sees the key, so hand it back when the user is typing.
+    private func moveToTrashUnlessEditingText() {
+        if let textView = NSApp.keyWindow?.firstResponder as? NSTextView {
+            textView.doCommand(by: #selector(NSResponder.deleteToBeginningOfLine(_:)))
+            return
+        }
+        withSelection { app?.notes.moveToTrash($0) }
+    }
+}

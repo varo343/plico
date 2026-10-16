@@ -4,6 +4,7 @@ import SwiftData
 public enum PersistenceError: Error, LocalizedError {
     case storeUnavailable(underlying: Error)
     case undecodableBlock(id: UUID, underlying: Error)
+    case noteNotFound(UUID)
 
     public var errorDescription: String? {
         switch self {
@@ -11,6 +12,8 @@ public enum PersistenceError: Error, LocalizedError {
             "The notes database could not be opened. (\(error.localizedDescription))"
         case .undecodableBlock(let id, _):
             "A note block (\(id.uuidString)) could not be read."
+        case .noteNotFound:
+            "The note no longer exists."
         }
     }
 }

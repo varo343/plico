@@ -8,14 +8,18 @@ struct SmartNotesApp: App {
     @State private var launch = LaunchState()
 
     var body: some Scene {
-        WindowGroup("Smart Notes") {
+        // Single window: one editing session per note, no cross-window conflicts.
+        Window("Smart Notes", id: "main") {
             switch launch.result {
-            case .success(let dependencies):
-                RootView(dependencies: dependencies)
+            case .success(let app):
+                RootView(app: app)
+                    .onAppear { app.startLifecycleObservers() }
             case .failure(let error):
                 StartupFailureView(message: error.localizedDescription) { launch.retry() }
             }
         }
+        .commands { AppCommands(app: try? launch.result.get()) }
+
         Settings {
             EmptyState(symbol: "gearshape", title: "Settings", message: "Settings arrive in a later milestone.")
                 .frame(width: 420, height: 260)
@@ -26,7 +30,7 @@ struct SmartNotesApp: App {
 @MainActor
 @Observable
 final class LaunchState {
-    private(set) var result: Result<AppDependencies, Error>
+    private(set) var result: Result<AppModel, Error>
 
     init() {
         result = Self.open()
@@ -36,8 +40,8 @@ final class LaunchState {
         result = Self.open()
     }
 
-    private static func open() -> Result<AppDependencies, Error> {
-        Result { try AppDependencies.fromLaunchArguments() }
+    private static func open() -> Result<AppModel, Error> {
+        Result { AppModel(dependencies: try AppDependencies.fromLaunchArguments()) }
     }
 }
 

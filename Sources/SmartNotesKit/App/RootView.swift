@@ -23,75 +23,136 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable {
         case .trash: "trash"
         }
     }
+
+    /// Destinations where creating a note is appropriate (shows the FAB).
+    var allowsCreation: Bool { self == .notes || self == .today }
 }
 
-/// Milestone 0 shell: real navigation + DI wiring; destinations are placeholders
-/// until their milestones land.
+/// Three-column layout: sidebar · list · editor.
 public struct RootView: View {
-    private let dependencies: AppDependencies
-    @State private var selection: SidebarDestination? = .notes
-    @State private var activeNoteCount: Int?
+    @Bindable private var app: AppModel
 
-    public init(dependencies: AppDependencies) {
-        self.dependencies = dependencies
+    public init(app: AppModel) {
+        self.app = app
     }
 
     public var body: some View {
         NavigationSplitView {
-            List(SidebarDestination.allCases, selection: $selection) { destination in
-                Label(destination.title, systemImage: destination.symbol)
-                    .tag(destination)
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 240)
-            .safeAreaInset(edge: .bottom) {
-                HStack {
-                    SettingsLink {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                    .buttonStyle(.borderless)
-                    Spacer()
-                }
-                .padding(SNSpacing.s)
-            }
+            sidebar
+                .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 240)
+        } content: {
+            content
+                .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
         } detail: {
             detail
                 .frame(minWidth: 440)
-                .background(SNColor.canvas)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if app.destination.allowsCreation {
+                OrganicNewNoteButton { app.createNote() }
+                    .padding(SNSpacing.l)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let trashed = app.notes.recentlyTrashed {
+                UndoTrashBanner(title: trashed.displayTitle, undo: app.notes.undoTrash, dismiss: app.notes.dismissUndo)
+                    .padding(.bottom, SNSpacing.l)
+                    .id(trashed.id)
+            }
         }
         .frame(minWidth: 820, minHeight: 520)
-        .task { refreshCount() }
+        .tint(SNColor.focusRing)
+        .alert("Something went wrong", isPresented: Binding(
+            get: { app.notes.errorMessage != nil },
+            set: { if !$0 { app.notes.errorMessage = nil } }
+        )) {
+            Button("OK") { app.notes.errorMessage = nil }
+        } message: {
+            Text(app.notes.errorMessage ?? "")
+        }
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SidebarDestination.allCases) { destination in
+                SidebarDestinationRow(
+                    title: destination.title,
+                    symbol: destination.symbol,
+                    isSelected: app.destination == destination
+                ) {
+                    app.destination = destination
+                }
+            }
+            Spacer()
+            SettingsLink {
+                Label("Settings", systemImage: "gearshape")
+                    .font(.system(size: 13))
+                    .foregroundStyle(SNColor.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, SNSpacing.s)
+            .padding(.bottom, SNSpacing.s)
+        }
+        .padding(.horizontal, SNSpacing.xs)
+        .padding(.top, SNSpacing.xs)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(SNColor.sidebar)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch app.destination {
+        case .notes:
+            NotesListView(model: app.notes)
+        case .trash:
+            TrashView(model: app.notes)
+        case .today:
+            EmptyState(symbol: "sun.max", title: "Nothing scheduled for today",
+                       message: "Today will list notes you planned or that are due. Coming in Milestone 3.")
+                .background(SNColor.card)
+        case .mentions:
+            EmptyState(symbol: "envelope", title: "Outlook not connected",
+                       message: "Mentions will show selected Outlook messages. Coming in Milestone 4.")
+                .background(SNColor.card)
+        }
     }
 
     @ViewBuilder
     private var detail: some View {
-        switch selection ?? .notes {
-        case .notes:
-            EmptyState(
-                symbol: "square.and.pencil",
-                title: "Write your first note",
-                message: notesMessage
-            )
-        case .today:
-            EmptyState(symbol: "sun.max", title: "Nothing scheduled for today", message: "Today arrives in Milestone 3.")
-        case .mentions:
-            EmptyState(symbol: "envelope", title: "Outlook not connected", message: "Mentions arrives in Milestone 4.")
-        case .trash:
-            EmptyState(symbol: "trash", title: "Trash is empty", message: "Trash arrives in Milestone 1.")
+        if app.destination == .notes, let editor = app.notes.editor {
+            NoteEditorView(model: editor)
+                .id(editor.note.id)
+        } else {
+            EmptyState(symbol: "note.text", title: app.destination == .trash ? "Restore a note to edit it" : "No note selected",
+                       message: app.destination == .notes ? "Select a note or press ⌘N." : "")
+                .background(SNColor.canvas)
         }
     }
+}
 
-    private var notesMessage: String {
-        let store = dependencies.isInMemory ? "in-memory store" : "local store"
-        guard let activeNoteCount else { return "Loading…" }
-        return "\(activeNoteCount) note(s) in the \(store). The note list and editor arrive in Milestones 1–2."
-    }
+private struct UndoTrashBanner: View {
+    let title: String
+    let undo: () -> Void
+    let dismiss: () -> Void
 
-    private func refreshCount() {
-        do {
-            activeNoteCount = try dependencies.notes.summaries(in: .active).count
-        } catch {
-            Log.persistence.error("Failed to load note summaries: \(error.localizedDescription, privacy: .public)")
-            activeNoteCount = 0
+    var body: some View {
+        HStack(spacing: SNSpacing.s) {
+            Text("Moved “\(title)” to Trash").lineLimit(1)
+            Button("Undo", action: undo).keyboardShortcut("z", modifiers: [.command, .option])
+            Button { dismiss() } label: { Image(systemName: "xmark") }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(SNColor.textPrimary)
+        .padding(.horizontal, SNSpacing.m)
+        .padding(.vertical, SNSpacing.xs)
+        .background(SNColor.card, in: Capsule())
+        .overlay(Capsule().stroke(SNColor.borderSubtle))
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        .task {
+            try? await Task.sleep(for: .seconds(8))
+            dismiss()
         }
     }
 }

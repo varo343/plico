@@ -41,7 +41,6 @@ public final class SwiftDataNoteRepository: NoteRepository {
             context.insert(record)
         }
 
-        record.title = note.title
         record.createdAt = note.createdAt
         record.updatedAt = note.updatedAt
         record.isPinned = note.isPinned
@@ -51,11 +50,32 @@ public final class SwiftDataNoteRepository: NoteRepository {
         record.dueDay = note.dueDate?.isoString
         record.manualRank = note.manualRank
         record.sourceExternalItemId = note.sourceExternalItemId
-        record.searchText = NoteText.searchText(title: note.title, blocks: note.blocks)
-        record.previewText = NoteText.preview(title: note.title, body: note.bodyPlainText)
-        record.displayTitle = note.displayTitle
+        try applyContent(to: record, title: note.title, blocks: note.blocks)
+        try context.save()
+    }
 
-        try syncBlocks(of: record, to: note.blocks)
+    public func updateContent(id: UUID, title: String, blocks: [NoteBlock], updatedAt: Date) throws {
+        guard let record = try record(id: id) else { throw PersistenceError.noteNotFound(id) }
+        record.updatedAt = updatedAt
+        try applyContent(to: record, title: title, blocks: blocks)
+        try context.save()
+    }
+
+    public func updateMetadata(id: UUID, _ change: (inout NoteMetadata) -> Void) throws {
+        guard let record = try record(id: id) else { throw PersistenceError.noteNotFound(id) }
+        var metadata = NoteMetadata(
+            isPinned: record.isPinned,
+            priority: Priority(rawValue: record.priorityRaw) ?? .none,
+            plannedDate: record.plannedDay.flatMap(LocalDay.init(isoString:)),
+            dueDate: record.dueDay.flatMap(LocalDay.init(isoString:)),
+            manualRank: record.manualRank
+        )
+        change(&metadata)
+        record.isPinned = metadata.isPinned
+        record.priorityRaw = metadata.priority.rawValue
+        record.plannedDay = metadata.plannedDate?.isoString
+        record.dueDay = metadata.dueDate?.isoString
+        record.manualRank = metadata.manualRank
         try context.save()
     }
 
@@ -106,6 +126,17 @@ public final class SwiftDataNoteRepository: NoteRepository {
             predicate = #Predicate { $0.deletedAt != nil && $0.searchText.contains(q) }
         }
         return FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+    }
+
+    /// Writes title and blocks plus everything derived from them.
+    private func applyContent(to record: NoteRecord, title: String, blocks: [NoteBlock]) throws {
+        let sorted = blocks.sorted { $0.rank < $1.rank }
+        let body = sorted.map(\.content.plainText).joined(separator: "\n")
+        record.title = title
+        record.searchText = NoteText.searchText(title: title, blocks: sorted)
+        record.previewText = NoteText.preview(title: title, body: body)
+        record.displayTitle = NoteText.displayTitle(title: title, body: body)
+        try syncBlocks(of: record, to: sorted)
     }
 
     /// Diffs block records against the domain blocks by ID: updates in place,

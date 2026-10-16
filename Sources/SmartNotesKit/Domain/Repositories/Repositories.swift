@@ -16,8 +16,16 @@ public protocol NoteRepository: AnyObject {
 
     func note(id: UUID) throws -> Note?
 
-    /// Inserts or replaces the note and its blocks. Callers set `updatedAt`.
+    /// Inserts or replaces the whole note and its blocks. Used for creation,
+    /// duplication and import. Callers set `updatedAt`.
     func save(_ note: Note) throws
+
+    /// Editor autosave path: writes only title, blocks and `updatedAt`, so a
+    /// pending autosave can never overwrite metadata changed elsewhere.
+    func updateContent(id: UUID, title: String, blocks: [NoteBlock], updatedAt: Date) throws
+
+    /// Metadata path (pin, rank, priority, dates). Does not touch content or `updatedAt`.
+    func updateMetadata(id: UUID, _ change: (inout NoteMetadata) -> Void) throws
 
     func moveToTrash(id: UUID, at date: Date) throws
 
@@ -29,6 +37,23 @@ public protocol NoteRepository: AnyObject {
     /// Permanently deletes every trashed note. Returns how many were removed.
     @discardableResult
     func emptyTrash() throws -> Int
+}
+
+/// Note fields that can change independently of the note's content.
+public struct NoteMetadata: Hashable, Sendable {
+    public var isPinned: Bool
+    public var priority: Priority
+    public var plannedDate: LocalDay?
+    public var dueDate: LocalDay?
+    public var manualRank: String
+
+    public init(isPinned: Bool, priority: Priority, plannedDate: LocalDay?, dueDate: LocalDay?, manualRank: String) {
+        self.isPinned = isPinned
+        self.priority = priority
+        self.plannedDate = plannedDate
+        self.dueDate = dueDate
+        self.manualRank = manualRank
+    }
 }
 
 public struct UpsertSummary: Equatable, Sendable {
