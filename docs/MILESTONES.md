@@ -47,10 +47,37 @@ Status legend: ✅ done and verified · 🟡 partial · ⬜ not started
 **Known M1 limitations (planned for M2):** no inline formatting commands or toolbar yet (⌘B/I/U/K),
 no block type changes, indent, block drag or Move Up/Down, undo is per block only, rich paste is plain text.
 
-## Milestone 2 — Block editor ⬜ (highest technical risk)
-Approach is settled: one NSTextView per block, already working in M1.
-Remaining: formatting commands and toolbar, links (⌘K), block type changes, Tab indent,
-block drag with insertion indicator, Move Up/Down, note-level undo/redo across blocks, rich paste mapping.
+## Milestone 2 — Block editor ✅ (automated) · 🟡 manual checks pending
+- ✅ Inline formatting: Bold ⌘B, Italic ⌘I, Underline ⌘U, Strikethrough ⇧⌘X, Inline Code (Format menu)
+  - with a selection: reformats it (undoable), selection kept; with only a caret: applies to the next typing
+- ✅ Links ⌘K: sheet with validation (http/https/mailto only; "example.com" → https), edit/remove,
+  insert address when nothing is selected; clicks open only safe schemes
+- ✅ Font family presets (System/Serif/Rounded/Mono) and size presets (12–28 pt): selection, or whole block
+- ✅ Formatting bar: appears on selection or via "Aa"; fixed height, so text never moves
+- ✅ Block types: Format menu (⌥⌘0–3 body/headings, ⇧⌘7 bullets, ⇧⌘8 numbers, ⇧⌘L checklist, Quote) + bar menu
+- ✅ Indent: Tab / Shift+Tab on list items, ⌘] / ⌘[ in the menu
+- ✅ Move Block Up/Down: ⌃⌘↑ / ⌃⌘↓, text context menu, handle context menu, VoiceOver actions
+- ✅ Block drag: grip on hover (in the margin, no layout shift), insertion line, private drag type
+- ✅ Note-level undo/redo (⌘Z / ⇧⌘Z) across typing (coalesced), formatting, Enter/Backspace, moves,
+  type changes, indent, checkbox, paste; caret restored; undo results are autosaved
+- ✅ Paste: rich RTF/HTML → supported marks, links and list blocks; multiple paragraphs → multiple blocks;
+  HTML sanitized (allowlist) before import; unsafe links dropped, text kept; Paste and Match Style = plain
+- ✅ Copy inside Smart Notes is lossless (private RichText type); other apps get RTF + plain text
+- ✅ Ranks renormalized automatically when keys grow long; duplicate ranks repaired on move
+- ✅ 150 tests passing (3 consecutive runs); hosted tests drive the real text views for formatting,
+  typing after toggling a mark, Tab, undo/redo across blocks, menu validation, copy/paste, multi-paragraph paste, moves
+
+**Manual checks pending:**
+- [ ] Drag a block by its grip: insertion line follows the pointer; drop lands in the right place; ⌘Z undoes it
+- [ ] Edit menu Undo/Redo enable/disable correctly and act on the note (not just the focused block)
+- [ ] ⌘B/I/U and ⌘K from the menu bar act on the focused block
+- [ ] Paste from Safari, Chrome, Pages and Word: formatting maps sensibly, no text lost
+- [ ] Right-click in text shows Move Block Up/Down
+
+**Known limitations:**
+- The title field has its own undo history (the standard text field one), separate from the note body.
+- Multi-block selection and multi-block drag are not supported (phase 2 in the spec).
+- Pasted headings become body text with bold; heading levels aren't inferred from pasted font sizes.
 
 ## Milestone 3 — Priority, dates, Today ⬜
 ## Milestone 4 — Outlook (mock fixtures first) ⬜

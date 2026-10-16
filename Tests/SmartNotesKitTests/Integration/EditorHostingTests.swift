@@ -77,6 +77,15 @@ final class EditorHarness {
         }
     }
 
+    func select(block index: Int, range: Range<Int>) {
+        click(block: index, at: range.lowerBound)
+        textViews[index].setSelectedRange(NSRange(location: range.lowerBound, length: range.count))
+    }
+
+    func pressTab(shift: Bool = false) async {
+        await send(shift ? "\u{19}" : "\t", keyCode: 48, modifiers: shift ? .shift : [])
+    }
+
     func pressReturn(shift: Bool = false) async { await send("\r", keyCode: 36, modifiers: shift ? .shift : []) }
     func pressBackspace() async { await send("\u{7f}", keyCode: 51) }
     func pressUp() async { await send(String(UnicodeScalar(NSUpArrowFunctionKey)!), keyCode: 126, modifiers: [.function, .numericPad]) }
@@ -179,25 +188,6 @@ final class EditorHarness {
         #expect(h.focused?.selectedRange().location == 0)
     }
 
-    @Test func pastingRichTextKeepsTextAsPlain() async throws {
-        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "A"))])
-        h.click(block: 0, at: 1)
-        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
-        board.clearContents()
-        board.writeObjects([NSAttributedString(string: " pasted", attributes: [.font: NSFont.boldSystemFont(ofSize: 40)])])
-        // pasteAsPlainText reads the general pasteboard; use it for this test only.
-        let general = NSPasteboard.general
-        let saved = general.pasteboardItems?.compactMap { $0.string(forType: .string) }
-        general.clearContents()
-        general.writeObjects([NSAttributedString(string: " pasted", attributes: [.font: NSFont.boldSystemFont(ofSize: 40)])])
-        h.focused?.paste(nil)
-        await h.pump()
-        #expect(h.editor.note.blocks[0].content == RichText(plain: "A pasted"))
-        general.clearContents()
-        if let saved, !saved.isEmpty { general.setString(saved.joined(), forType: .string) }
-        _ = board
-    }
-
     @Test func largeNoteEditingStaysResponsive() async throws {
         let blocks = (0..<150).map { (BlockType.paragraph, RichText(runs: [TextRun("Paragraph \($0) "), TextRun("bold", marks: [.bold])])) }
         let clock = ContinuousClock()
@@ -213,5 +203,113 @@ final class EditorHarness {
         #expect(loadTime < .seconds(3))
         #expect(typingTime < .seconds(3))
         print("150-block note: load \(loadTime), 10 keystrokes \(typingTime)")
+    }
+
+    // MARK: Milestone 2
+
+    @Test func boldThroughResponderChainKeepsSelection() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "Hello world"))])
+        h.select(block: 0, range: 0..<5)
+        h.focused?.snToggleBold(nil)
+        await h.pump()
+        #expect(h.editor.note.blocks[0].content.runs == [TextRun("Hello", marks: [.bold]), TextRun(" world")])
+        #expect(h.focused?.selectedRange() == NSRange(location: 0, length: 5))
+        let font = h.textViews[0].textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+        #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+    }
+
+    @Test func boldWithCaretOnlyAppliesToNextTyping() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "ab"))])
+        h.click(block: 0, at: 1)
+        h.focused?.snToggleItalic(nil)
+        await h.type("X")
+        #expect(h.editor.note.blocks[0].content.runs == [TextRun("a"), TextRun("X", marks: [.italic]), TextRun("b")])
+    }
+
+    @Test func tabIndentsListItemsOnly() async throws {
+        let h = try await EditorHarness.make(blocks: [(.bulletItem, RichText(plain: "item"))])
+        h.click(block: 0, at: 2)
+        await h.pressTab()
+        #expect(h.editor.note.blocks[0].indentLevel == 1)
+        #expect(h.plainBlocks == ["item"]) // no tab character inserted
+        await h.pressTab(shift: true)
+        #expect(h.editor.note.blocks[0].indentLevel == 0)
+    }
+
+    @Test func undoAndRedoThroughTextViewAcrossBlocks() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "One"))])
+        h.click(block: 0, at: 3)
+        await h.type("!")
+        await h.pressReturn()
+        await h.type("Two")
+        #expect(h.plainBlocks == ["One!", "Two"])
+
+        h.focused?.undo(nil); await h.pump()
+        #expect(h.plainBlocks == ["One!", ""])
+        h.focused?.undo(nil); await h.pump()
+        #expect(h.plainBlocks == ["One!"])
+        #expect(h.textViews.map(\.string) == ["One!"])
+        h.focused?.undo(nil); await h.pump()
+        #expect(h.plainBlocks == ["One"])
+        h.focused?.redo(nil); await h.pump()
+        h.focused?.redo(nil); await h.pump()
+        #expect(h.plainBlocks == ["One!", ""])
+        #expect(h.focused === h.textViews.last)
+    }
+
+    @Test func undoMenuValidationFollowsModel() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "a"))])
+        h.click(block: 0, at: 1)
+        let undoItem = NSMenuItem(title: "Undo", action: #selector(BlockNSTextView.undo(_:)), keyEquivalent: "")
+        #expect(h.focused?.validateUserInterfaceItem(undoItem) == false)
+        await h.type("b")
+        #expect(h.focused?.validateUserInterfaceItem(undoItem) == true)
+    }
+
+    @Test func copyPasteInsideAppIsLossless() async throws {
+        let h = try await EditorHarness.make(blocks: [
+            (.paragraph, RichText(runs: [TextRun("code", marks: [.code], fontFamily: .monospaced), TextRun(" and "), TextRun("serif", fontFamily: .serif, fontSize: .large)])),
+            (.paragraph, RichText(plain: "target: ")),
+        ])
+        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        h.textViews.forEach { $0.pasteboard = board }
+        h.select(block: 0, range: 0..<18)
+        h.focused?.copy(nil)
+        #expect(board.types?.contains(.rtf) == true)        // other apps still get RTF
+        h.click(block: 1, at: 8)
+        h.focused?.paste(nil)
+        await h.pump()
+        #expect(h.editor.note.blocks[1].content == RichText(plain: "target: ") + h.editor.note.blocks[0].content)
+    }
+
+    @Test func multiParagraphPasteCreatesBlocksAndFocusesEnd() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "[]"))])
+        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("<p>first <b>bold</b></p><ul><li>item</li></ul>", forType: .html)
+        h.textViews.forEach { $0.pasteboard = board }
+        h.click(block: 0, at: 1)
+        h.focused?.paste(nil)
+        await h.pump()
+        #expect(h.plainBlocks.map { $0.trimmingCharacters(in: .whitespaces) } == ["[first bold", "item]"])
+        #expect(h.editor.note.blocks[1].type == .bulletItem)
+        #expect(h.focused === h.textViews[1])
+        h.focused?.undo(nil); await h.pump()
+        #expect(h.plainBlocks == ["[]"])
+    }
+
+    @Test func moveBlockKeepsCaretInMovedBlock() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "first")), (.paragraph, RichText(plain: "second"))])
+        h.click(block: 1, at: 3)
+        h.editor.updateSelection(blockID: h.editor.note.blocks[1].id, range: 3..<3)
+        h.editor.moveBlock(by: -1)
+        await h.pump()
+        #expect(h.textViews.map(\.string) == ["second", "first"])
+        #expect(h.focused === h.textViews[0])
+        #expect(h.focused?.selectedRange().location == 3)
+        await h.type("X")
+        #expect(h.plainBlocks == ["secXond", "first"])
     }
 }

@@ -1,15 +1,20 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Title + block body for one note. Minimal chrome; writing comes first.
 struct NoteEditorView: View {
     @Bindable var model: NoteEditorModel
     var defaults = EditorDefaults()
+    @State private var showsFormatting = false
+    @State private var draggingBlockID: UUID?
+    @State private var dropTarget: DropTarget?
 
     var body: some View {
         VStack(spacing: 0) {
             if let error = model.saveError {
                 SaveErrorBanner(message: error) { model.flush() }
             }
+            NoteEditorToolbar(model: model, showsFormatting: $showsFormatting)
             ScrollView {
                 VStack(alignment: .leading, spacing: SNSpacing.m) {
                     TextField("Title", text: Binding(get: { model.note.title }, set: model.setTitle), axis: .vertical)
@@ -20,7 +25,7 @@ struct NoteEditorView: View {
                         .accessibilityLabel("Note title")
 
                     // Not lazy: recycling rows would recreate a text view while it
-                    // is being edited, losing focus and undo history.
+                    // is being edited, losing focus and in-progress input.
                     VStack(alignment: .leading, spacing: SNSpacing.xxs) {
                         let numbers = listNumbers(model.note.blocks)
                         ForEach(Array(model.note.blocks.enumerated()), id: \.element.id) { index, block in
@@ -29,7 +34,9 @@ struct NoteEditorView: View {
                                 number: numbers[index],
                                 defaults: defaults,
                                 focusRequest: model.focusRequest,
-                                model: model
+                                model: model,
+                                draggingBlockID: $draggingBlockID,
+                                dropTarget: $dropTarget
                             )
                         }
                     }
@@ -42,7 +49,7 @@ struct NoteEditorView: View {
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, SNSpacing.xl + SNSpacing.xs)
-                .padding(.top, SNSpacing.l)
+                .padding(.top, SNSpacing.s)
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
@@ -50,6 +57,9 @@ struct NoteEditorView: View {
             .contentMargins(.bottom, 96, for: .scrollContent)
         }
         .background(SNColor.canvas)
+        .sheet(isPresented: Binding(get: { model.linkDraft != nil }, set: { if !$0 { model.cancelLinkEditing() } })) {
+            LinkEditorSheet(model: model)
+        }
     }
 
     /// 1-based numbers for consecutive numbered items at the same indent.
@@ -68,37 +78,99 @@ struct NoteEditorView: View {
     }
 }
 
+struct DropTarget: Equatable {
+    var blockID: UUID
+    var placeAfter: Bool
+}
+
 private struct BlockRow: View {
     let block: NoteBlock
     let number: Int?
     let defaults: EditorDefaults
     let focusRequest: FocusRequest?
     let model: NoteEditorModel
+    @Binding var draggingBlockID: UUID?
+    @Binding var dropTarget: DropTarget?
+    @State private var isHovered = false
+    @State private var rowHeight: CGFloat = 0
 
     private static let indentWidth: CGFloat = 22
     private static let gutterWidth: CGFloat = 24
+    /// Handle (18) + spacing (6) live in the editor's left margin, so block text
+    /// stays aligned with the title and nothing shifts when the handle appears.
+    private static let handleSpace: CGFloat = 24
 
     var body: some View {
         let style = BlockTextStyle(type: block.type, defaults: defaults, isChecked: block.isChecked)
-        HStack(alignment: .top, spacing: SNSpacing.xxs) {
-            gutter(style: style)
-            BlockTextView(
-                content: block.content,
-                style: style,
-                accessibilityLabel: accessibilityLabel,
-                focusRequest: focusRequest,
-                blockID: block.id,
-                actions: BlockTextActions(
-                    onChange: { [model, id = block.id] in model.setContent($0, ofBlock: id) },
-                    onEnter: { [model, id = block.id] in model.splitBlock(id, atUTF16Offset: $0) },
-                    onBackspaceAtStart: { [model, id = block.id] in model.mergeBlockWithPrevious(id) },
-                    onExitUp: { [model, id = block.id] in model.focusPrevious(before: id) },
-                    onExitDown: { [model, id = block.id] in model.focusNext(after: id) }
-                )
+        HStack(alignment: .top, spacing: 6) {
+            BlockDragHandle(
+                isVisible: isHovered,
+                height: style.lineHeight,
+                moveUp: { model.moveBlock(block.id, by: -1) },
+                moveDown: { model.moveBlock(block.id, by: 1) }
             )
+            .onDrag {
+                draggingBlockID = block.id
+                let provider = NSItemProvider()
+                provider.registerDataRepresentation(forTypeIdentifier: UTType.smartNotesBlock.identifier, visibility: .ownProcess) { completion in
+                    completion(Data(block.id.uuidString.utf8), nil)
+                    return nil
+                }
+                return provider
+            } preview: {
+                Text(block.content.plainText.isEmpty ? " " : String(block.content.plainText.prefix(60)))
+                    .font(SNFont.body)
+                    .padding(SNSpacing.xs)
+                    .background(SNColor.card, in: RoundedRectangle(cornerRadius: SNRadius.small))
+            }
+
+            HStack(alignment: .top, spacing: SNSpacing.xxs) {
+                gutter(style: style)
+                BlockTextView(
+                    content: block.content,
+                    style: style,
+                    accessibilityLabel: accessibilityLabel,
+                    focusRequest: focusRequest,
+                    blockID: block.id,
+                    actions: actions
+                )
+            }
+            .padding(.leading, CGFloat(block.indentLevel) * Self.indentWidth)
         }
-        .padding(.leading, CGFloat(block.indentLevel) * Self.indentWidth)
+        .padding(.leading, -Self.handleSpace)
         .padding(.top, block.type.isHeading ? SNSpacing.xs : 0)
+        .onHover { isHovered = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = $0 }
+        .overlay(alignment: dropTarget?.placeAfter == true ? .bottom : .top) {
+            if dropTarget?.blockID == block.id {
+                BlockInsertionIndicator().offset(y: dropTarget?.placeAfter == true ? 3 : -3)
+            }
+        }
+        .onDrop(of: [.smartNotesBlock], delegate: BlockDropDelegate(
+            blockID: block.id, rowHeight: rowHeight, model: model,
+            draggingBlockID: $draggingBlockID, dropTarget: $dropTarget
+        ))
+    }
+
+    private var actions: BlockTextActions {
+        let id = block.id
+        return BlockTextActions(
+            onChange: { [model] in model.setContent($0, ofBlock: id) },
+            onSelectionChange: { [model] in model.updateSelection(blockID: id, range: $0) },
+            onEnter: { [model] in model.splitBlock(id, atUTF16Offset: $0) },
+            onBackspaceAtStart: { [model] in model.mergeBlockWithPrevious(id) },
+            onExitUp: { [model] in model.focusPrevious(before: id) },
+            onExitDown: { [model] in model.focusNext(after: id) },
+            onIndent: { [model] in model.indentBlock(id, by: $0) },
+            onToggleMark: { [model] in model.toggleMark($0, blockID: id, range: $1) },
+            onEditLink: { [model] in model.beginLinkEditing(blockID: id, range: $0) },
+            onPaste: { [model] in model.paste($0, blockID: id, range: $1) },
+            onMoveBlock: { [model] in model.moveBlock(id, by: $0) },
+            onUndo: { [model] in model.undo() },
+            onRedo: { [model] in model.redo() },
+            canUndo: { [model] in model.canUndo },
+            canRedo: { [model] in model.canRedo }
+        )
     }
 
     @ViewBuilder
@@ -145,6 +217,39 @@ private struct BlockRow: View {
         case .quote: "Quote"
         case .paragraph: "Paragraph"
         }
+    }
+}
+
+/// Shows the insertion line and moves the dragged block on drop.
+private struct BlockDropDelegate: DropDelegate {
+    let blockID: UUID
+    let rowHeight: CGFloat
+    let model: NoteEditorModel
+    @Binding var draggingBlockID: UUID?
+    @Binding var dropTarget: DropTarget?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggingBlockID != nil && info.hasItemsConforming(to: [.smartNotesBlock])
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        let target = DropTarget(blockID: blockID, placeAfter: info.location.y > rowHeight / 2)
+        if dropTarget != target { dropTarget = target }
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTarget?.blockID == blockID { dropTarget = nil }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer {
+            draggingBlockID = nil
+            dropTarget = nil
+        }
+        guard let dragged = draggingBlockID else { return false }
+        model.moveBlock(dragged, relativeTo: blockID, placeAfter: info.location.y > rowHeight / 2)
+        return true
     }
 }
 

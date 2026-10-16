@@ -4,7 +4,7 @@ A native, local-first macOS note-taking app (SwiftUI + SwiftData). Specs:
 `Smart_Notes_Technical_Spec.md` (architecture, data, security) and
 `Smart_Notes_UX_UI_Design_Spec.md` (layout, visuals, interactions).
 
-**Status:** Milestones 0–1 complete (notes foundation; some interactions still need manual checks). See [`docs/MILESTONES.md`](docs/MILESTONES.md).
+**Status:** Milestones 0–2 complete (notes foundation and block editor; some interactions still need manual checks). See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 ## Requirements
 - macOS 14 Sonoma or later (developed on macOS 27 / Xcode 27 / Swift 6.4)
@@ -55,6 +55,8 @@ project generator, and adding one (xcodegen/tuist) would be an extra dependency.
 ## Architecture notes
 - **Data flow:** View → model (`NotesModel` / `NoteEditorModel`) → repository protocol → SwiftData. Views never touch SwiftData directly.
 - **Editor:** one TextKit 1 `NSTextView` per block. Inline marks live in custom attributes inside the text view and convert losslessly to and from `RichText`. Structural edits (Enter, Backspace) are pure functions in `BlockEditing`.
+- **Undo:** one note-level history in `NoteEditorModel` (`EditHistory`). The block text views have their own undo turned off and forward ⌘Z to the model.
+- **Paste:** `PasteConverter` maps RTF/HTML to supported marks and blocks. HTML first goes through `HTMLSanitizer`, an allowlist, so importing it can't load remote resources.
 - **Saving:** autosave writes only title and blocks (`updateContent`). Pin, rank and dates go through `updateMetadata`, so neither can overwrite the other.
 - **Rich text storage:** each block stores a versioned JSON payload
   (`{"version":1,"runs":[{"text":"…","marks":["bold"]}]}`) with deterministic encoding.

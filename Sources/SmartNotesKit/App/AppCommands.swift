@@ -37,6 +37,30 @@ public struct AppCommands: Commands {
             }
             .disabled(app == nil)
         }
+        CommandMenu("Format") {
+            // Inline marks go to the focused block's text view (no-op elsewhere).
+            Button("Bold") { EditorActions.toggle(.bold) }.keyboardShortcut("b")
+            Button("Italic") { EditorActions.toggle(.italic) }.keyboardShortcut("i")
+            Button("Underline") { EditorActions.toggle(.underline) }.keyboardShortcut("u")
+            Button("Strikethrough") { EditorActions.toggle(.strikethrough) }.keyboardShortcut("x", modifiers: [.command, .shift])
+            Button("Inline Code") { EditorActions.toggle(.code) }
+            Button("Link…") { EditorActions.editLink() }.keyboardShortcut("k")
+            Divider()
+            Button("Body") { blockType(.paragraph) }.keyboardShortcut("0", modifiers: [.command, .option])
+            Button("Heading 1") { blockType(.heading1) }.keyboardShortcut("1", modifiers: [.command, .option])
+            Button("Heading 2") { blockType(.heading2) }.keyboardShortcut("2", modifiers: [.command, .option])
+            Button("Heading 3") { blockType(.heading3) }.keyboardShortcut("3", modifiers: [.command, .option])
+            Button("Bulleted List") { blockType(.bulletItem) }.keyboardShortcut("7", modifiers: [.command, .shift])
+            Button("Numbered List") { blockType(.numberedItem) }.keyboardShortcut("8", modifiers: [.command, .shift])
+            Button("Checklist") { blockType(.checklistItem) }.keyboardShortcut("l", modifiers: [.command, .shift])
+            Button("Quote") { blockType(.quote) }
+            Divider()
+            Button("Indent") { indent(1) }.keyboardShortcut("]")
+            Button("Outdent") { indent(-1) }.keyboardShortcut("[")
+            // ⌃⌘↑/↓ as in Apple Notes; plain arrow shortcuts stay with text navigation.
+            Button("Move Block Up") { app?.notes.editor?.moveBlock(by: -1) }.keyboardShortcut(.upArrow, modifiers: [.command, .control])
+            Button("Move Block Down") { app?.notes.editor?.moveBlock(by: 1) }.keyboardShortcut(.downArrow, modifiers: [.command, .control])
+        }
         CommandGroup(after: .sidebar) {
             ForEach(Array(SidebarDestination.allCases.enumerated()), id: \.element) { index, destination in
                 Button(destination.title) { app?.destination = destination }
@@ -44,6 +68,15 @@ public struct AppCommands: Commands {
             }
             Divider()
         }
+    }
+
+    private func blockType(_ type: BlockType) {
+        app?.notes.editor?.setBlockType(type)
+    }
+
+    private func indent(_ delta: Int) {
+        guard let editor = app?.notes.editor, let id = editor.activeBlockID else { return }
+        editor.indentBlock(id, by: delta)
     }
 
     private func withSelection(_ body: (UUID) -> Void) {
