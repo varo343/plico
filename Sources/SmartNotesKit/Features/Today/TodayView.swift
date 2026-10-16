@@ -119,8 +119,9 @@ private struct TodayCard: View {
             .shadow(color: .black.opacity(isSelected ? 0.06 : 0), radius: 3, y: 1)
             .contentShape(RoundedRectangle(cornerRadius: SNRadius.standard))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CardPressStyle())
         .onHover { isHovered = $0 }
+        .snAnimation(SNMotion.hover, value: isHovered)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens the note")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -150,5 +151,11 @@ private struct TodayCard: View {
             .font(SNFont.secondary)
             .padding(.top, 2)
         }
+    }
+}
+
+private struct CardPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.snPressEffect(configuration.isPressed, scale: 0.98)
     }
 }

@@ -190,6 +190,7 @@ struct SNMenuList: View {
             .frame(minWidth: minWidth, alignment: .leading)
         }
         .fixedSize()
+        .modifier(PopIn())
         .focusable()
         .focused($focused)
         .focusEffectDisabled()
@@ -214,6 +215,7 @@ struct SNMenuList: View {
                 } else {
                     if let icon = item.icon {
                         Image(systemName: icon).font(.system(size: 12, weight: .medium)).frame(width: 18)
+                            .jiggle(on: isHighlighted)
                     }
                     Text(item.title).font(.system(size: 13, weight: .medium))
                 }
@@ -231,6 +233,7 @@ struct SNMenuList: View {
             .background(isHighlighted ? SNColor.borderSubtle.opacity(0.85) : .clear,
                         in: RoundedRectangle(cornerRadius: innerRadius))
             .contentShape(RoundedRectangle(cornerRadius: innerRadius))
+            .snAnimation(SNMotion.hover, value: isHighlighted)
         }
         .buttonStyle(.plain)
         .onHover { if $0 { highlighted = item.id } }
@@ -259,6 +262,7 @@ struct SNDropdown<Label: View>: View {
     var shape: SNHighlightShape = .rounded(8)
     /// Text triggers show a chevron; icon-only triggers usually don't.
     var showsChevron = true
+    var onOpenChange: (Bool) -> Void = { _ in }
     let entries: () -> [SNMenuEntry]
     @ViewBuilder let label: () -> Label
     @State private var controller = FloatingPanelController()
@@ -284,10 +288,11 @@ struct SNDropdown<Label: View>: View {
 
     private func open() {
         guard let window = anchor.view?.window, let rect = anchor.screenRect else { return }
-        controller.onClose = { isOpen = false }
+        controller.onClose = { isOpen = false; onOpenChange(false) }
         controller.show(SNMenuList(entries: entries(), minWidth: minWidth) { controller.close() },
                         below: rect, in: window, acceptsKey: true)
         isOpen = true
+        onOpenChange(true)
     }
 }
 
@@ -310,7 +315,7 @@ struct SNPopoverButton<Label: View, Panel: View>: View {
     private func open() {
         guard let window = anchor.view?.window, let rect = anchor.screenRect else { return }
         controller.onClose = { isOpen = false }
-        controller.show(SNFloatingSurface { panel { controller.close() } }.fixedSize(), below: rect, in: window, acceptsKey: true)
+        controller.show(SNFloatingSurface { panel { controller.close() } }.fixedSize().modifier(PopIn()), below: rect, in: window, acceptsKey: true)
         isOpen = true
     }
 }

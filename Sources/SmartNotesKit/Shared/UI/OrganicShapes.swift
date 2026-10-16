@@ -41,3 +41,42 @@ public struct OrganicPillShape: Shape {
         return path
     }
 }
+
+/// Hand-drawn capsule for tags: uneven ends and slightly bowed edges.
+/// `variant` picks one of a few fixed wobbles (never random).
+public struct WobblyCapsuleShape: Shape {
+    var variant: Int = 0
+
+    public func path(in rect: CGRect) -> Path {
+        // Fixed per-variant offsets (in points), small enough to stay legible.
+        let wobbles: [[CGFloat]] = [
+            [1.2, -0.7, 0.4, 0.9, -0.5, 0.6],
+            [0.5, 0.8, -0.6, 0.3, 1.0, -0.4],
+            [-0.4, 0.4, 1.0, -0.7, 0.2, 0.9],
+            [0.9, -0.3, 0.6, 0.5, -0.8, 0.2],
+        ]
+        let w = wobbles[abs(variant) % wobbles.count]
+        let minX = rect.minX, maxX = rect.maxX, minY = rect.minY, maxY = rect.maxY
+        let r = rect.height / 2
+        var path = Path()
+        path.move(to: CGPoint(x: minX + r * 0.95, y: minY + w[0] * 0.6))
+        // Top edge, gently bowed.
+        path.addCurve(to: CGPoint(x: maxX - r * 1.05, y: minY + w[1] * 0.5),
+                      control1: CGPoint(x: minX + rect.width * 0.35, y: minY - 0.9 + w[2] * 0.4),
+                      control2: CGPoint(x: minX + rect.width * 0.7, y: minY + 0.5 + w[3] * 0.4))
+        // Right end, a bit squarer than a true semicircle.
+        path.addCurve(to: CGPoint(x: maxX - r * 0.9, y: maxY - 0.3 + w[4] * 0.4),
+                      control1: CGPoint(x: maxX + 0.9 + w[3] * 0.4, y: minY + r * 0.15),
+                      control2: CGPoint(x: maxX + 0.4, y: maxY - r * 0.05))
+        // Bottom edge.
+        path.addCurve(to: CGPoint(x: minX + r * 1.1, y: maxY + w[5] * 0.5),
+                      control1: CGPoint(x: minX + rect.width * 0.62, y: maxY + 0.8),
+                      control2: CGPoint(x: minX + rect.width * 0.3, y: maxY - 0.4 + w[0] * 0.3))
+        // Left end.
+        path.addCurve(to: CGPoint(x: minX + r * 0.95, y: minY + w[0] * 0.6),
+                      control1: CGPoint(x: minX - 0.8 + w[1] * 0.4, y: maxY - r * 0.1),
+                      control2: CGPoint(x: minX - 0.3, y: minY + r * 0.1))
+        path.closeSubpath()
+        return path
+    }
+}

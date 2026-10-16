@@ -120,6 +120,8 @@ struct NotesListView: View {
                 }
                 .padding(.horizontal, SNSpacing.xs)
                 .padding(.bottom, SNSpacing.l)
+                .snAnimation(SNMotion.snappy, value: model.groups)
+                .snAnimation(SNMotion.hover, value: model.selectedNoteID)
             }
             .focusable()
             .focused($listFocused)
@@ -153,7 +155,8 @@ struct NotesListView: View {
             NoteListRow(
                 note: note,
                 isSelected: note.id == model.selectedNoteID,
-                isListFocused: listFocused
+                isListFocused: listFocused,
+                notes: model
             ) {
                 model.select(note.id)
                 listFocused = true
@@ -243,11 +246,31 @@ struct NoteListRow: View {
     let note: NoteSummary
     var isSelected = false
     var isListFocused = false
+    /// Enables the hover "⋯" menu (Pin, Duplicate, Move to Trash).
+    var notes: NotesModel?
     var today: LocalDay = .today()
     var action: () -> Void = {}
     @State private var isHovered = false
+    @State private var isMenuOpen = false
+
+    private var showsActions: Bool { notes != nil && (isHovered || isMenuOpen) }
 
     var body: some View {
+        ZStack(alignment: .topTrailing) {
+            rowButton
+            if let notes {
+                NoteActionsMenu(notes: notes, noteID: note.id) { isMenuOpen = $0 }
+                    .padding(.top, 6)
+                    .padding(.trailing, 6)
+                    .opacity(showsActions ? 1 : 0)
+                    .allowsHitTesting(showsActions)
+            }
+        }
+        .onHover { isHovered = $0 }
+        .snAnimation(SNMotion.hover, value: showsActions)
+    }
+
+    private var rowButton: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: SNSpacing.xxs) {
@@ -260,8 +283,10 @@ struct NoteListRow: View {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(SNColor.textSecondary)
+                            .opacity(showsActions ? 0 : 1) // the ⋯ takes its place on hover
                             .accessibilityLabel("Pinned")
                     }
+                    Spacer().frame(width: showsActions ? 24 : 0) // room for the ⋯
                 }
                 Text(note.preview.isEmpty ? "No additional text" : note.preview)
                     .font(.system(size: 12.5))
@@ -283,8 +308,7 @@ struct NoteListRow: View {
             .background { rowBackground }
             .contentShape(RoundedRectangle(cornerRadius: SNRadius.standard))
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .buttonStyle(RowPressStyle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -299,5 +323,12 @@ struct NoteListRow: View {
         } else if isHovered {
             shape.fill(SNColor.borderSubtle.opacity(0.45))
         }
+    }
+}
+
+/// Rows press in slightly when clicked.
+private struct RowPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.snPressEffect(configuration.isPressed, scale: 0.985)
     }
 }

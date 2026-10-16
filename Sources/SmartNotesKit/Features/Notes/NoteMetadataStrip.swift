@@ -10,11 +10,8 @@ struct NoteMetadataStrip: View {
 
     var body: some View {
         if let summary = notes.summary(for: noteID) {
-            HStack(alignment: .top, spacing: SNSpacing.xs) {
-                metadata(summary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                actions(summary)
-            }
+            metadata(summary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -29,34 +26,6 @@ struct NoteMetadataStrip: View {
             .buttonStyle(MetadataButtonStyle(isSet: summary.isPinned))
             .help(summary.isPinned ? "Unpin (⇧⌘P)" : "Pin to the top of the list (⇧⌘P)")
         }
-    }
-
-    /// Formatting toggle and note actions, next to what they act on.
-    private func actions(_ summary: NoteSummary) -> some View {
-        HStack(spacing: 2) {
-            if let editor = notes.editor, editor.note.id == noteID {
-                Button { editor.showsFormattingBar.toggle() } label: {
-                    Text("Aa").font(.system(size: 12.5, weight: .semibold))
-                }
-                .buttonStyle(SNIconButtonStyle(isActive: editor.showsFormattingBar, size: CGSize(width: 30, height: 26)))
-                .hoverLabel(editor.showsFormattingBar ? "Hide formatting" : "Show formatting")
-                .accessibilityLabel("Formatting controls")
-                .accessibilityValue(editor.showsFormattingBar ? "Shown" : "Hidden")
-            }
-            SNDropdown(minWidth: 190, showsChevron: false) {
-                [
-                    .item(SNMenuItem(title: summary.isPinned ? "Unpin" : "Pin", icon: summary.isPinned ? "pin.slash" : "pin", shortcut: "⇧⌘P") { notes.togglePin(noteID) }),
-                    .item(SNMenuItem(title: "Duplicate", icon: "plus.square.on.square", shortcut: "⌘D") { notes.duplicate(noteID) }),
-                    .divider(),
-                    .item(SNMenuItem(title: "Move to Trash", icon: "trash", isDestructive: true, shortcut: "⌘⌫") { notes.moveToTrash(noteID) }),
-                ]
-            } label: {
-                Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
-            }
-            .hoverLabel("Note actions")
-            .accessibilityLabel("Note actions")
-        }
-        .foregroundStyle(SNColor.textPrimary)
     }
 }
 
@@ -146,8 +115,9 @@ private struct MetadataButtonBody: View {
             .background {
                 if isHovered { Capsule().fill(SNColor.borderSubtle.opacity(0.55)) }
             }
-            .opacity(configuration.isPressed ? 0.6 : 1)
             .contentShape(Capsule())
+            .snPressEffect(configuration.isPressed)
+            .snAnimation(SNMotion.hover, value: isHovered)
             .onHover { isHovered = $0 }
     }
 }

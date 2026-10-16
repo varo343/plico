@@ -32,6 +32,8 @@ private struct SNIconButtonBody: View {
             .opacity(isEnabled ? 1 : 0.45)
             .background { highlight }
             .contentShape(Rectangle())
+            .snPressEffect(configuration.isPressed, scale: 0.9)
+            .snAnimation(SNMotion.hover, value: isHovered)
             .onHover { isHovered = $0 && isEnabled }
     }
 
@@ -80,6 +82,8 @@ private struct SNCapsuleButtonBody: View {
             .overlay(Capsule().strokeBorder(SNColor.borderSubtle, lineWidth: 1))
             .contentShape(Capsule())
             .opacity(isEnabled ? 1 : 0.55)
+            .snPressEffect(configuration.isPressed)
+            .snAnimation(SNMotion.hover, value: isHovered)
             .onHover { isHovered = $0 && isEnabled }
     }
 }

@@ -73,8 +73,10 @@ public struct RootView: View {
                 UndoTrashBanner(title: trashed.displayTitle, undo: app.notes.undoTrash, dismiss: app.notes.dismissUndo)
                     .padding(.bottom, SNSpacing.l)
                     .id(trashed.id)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .snAnimation(SNMotion.snappy, value: app.notes.recentlyTrashed?.id)
         .frame(minWidth: 760, minHeight: 520)
         .tint(SNColor.focusRing)
         .alert("Something went wrong", isPresented: Binding(
@@ -114,27 +116,26 @@ public struct RootView: View {
             .padding(.trailing, SNSpacing.s)
             .padding(.bottom, SNSpacing.s)
             content
+                .id(app.destination)
+                .transition(.opacity.combined(with: .offset(y: 6)))
         }
+        .snAnimation(SNMotion.snappy, value: app.destination)
     }
 
     /// The Linear-style card that holds the note (or the section's detail).
     private var noteCard: some View {
-        detail
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SNColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: SNRadius.standard))
-            .overlay(RoundedRectangle(cornerRadius: SNRadius.standard).strokeBorder(SNColor.borderSubtle, lineWidth: 1))
-            .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
-            .overlay(alignment: .topLeading) {
-                Button { app.isListVisible.toggle() } label: {
-                    Image(systemName: "sidebar.left").font(.system(size: 13))
-                }
-                .buttonStyle(SNIconButtonStyle(isActive: !app.isListVisible))
-                .foregroundStyle(SNColor.textSecondary)
-                .help(app.isListVisible ? "Hide list (⌃⌘S)" : "Show list (⌃⌘S)")
-                .accessibilityLabel(app.isListVisible ? "Hide list" : "Show list")
-                .padding(8)
-            }
+        VStack(spacing: 0) {
+            NoteCardTopBar(app: app)
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+        }
+        .snAnimation(.easeOut(duration: 0.16), value: app.notes.selectedNoteID)
+        .snAnimation(.easeOut(duration: 0.16), value: app.destination)
+        .background(SNColor.card)
+        .clipShape(RoundedRectangle(cornerRadius: SNRadius.standard))
+        .overlay(RoundedRectangle(cornerRadius: SNRadius.standard).strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
     }
 
     @ViewBuilder
@@ -178,6 +179,75 @@ public struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+/// Top of the note card: list toggle, the formatting bar (on selection or
+/// via "Aa"), and the note's actions. Fixed height, so text never jumps.
+private struct NoteCardTopBar: View {
+    let app: AppModel
+
+    private var editor: NoteEditorModel? {
+        app.destination.showsEditor ? app.notes.editor : nil
+    }
+
+    var body: some View {
+        let showsFormatting = editor.map { $0.hasTextSelection || $0.showsFormattingBar } ?? false
+        HStack(spacing: SNSpacing.xs) {
+            Button { app.isListVisible.toggle() } label: {
+                Image(systemName: "sidebar.left").font(.system(size: 13))
+            }
+            .buttonStyle(SNIconButtonStyle(isActive: !app.isListVisible))
+            .foregroundStyle(SNColor.textSecondary)
+            .hoverLabel(app.isListVisible ? "Hide list  ⌃⌘S" : "Show list  ⌃⌘S")
+            .accessibilityLabel(app.isListVisible ? "Hide list" : "Show list")
+
+            Spacer(minLength: SNSpacing.xs)
+            if let editor, showsFormatting {
+                NoteEditorToolbar(model: editor)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            Spacer(minLength: SNSpacing.xs)
+
+            if let editor {
+                Button { editor.showsFormattingBar.toggle() } label: {
+                    Text("Aa").font(.system(size: 12.5, weight: .semibold))
+                }
+                .buttonStyle(SNIconButtonStyle(isActive: editor.showsFormattingBar, size: CGSize(width: 30, height: 26)))
+                .foregroundStyle(SNColor.textPrimary)
+                .hoverLabel(editor.showsFormattingBar ? "Hide formatting" : "Show formatting")
+                .accessibilityLabel("Formatting controls")
+                .accessibilityValue(editor.showsFormattingBar ? "Shown" : "Hidden")
+                NoteActionsMenu(notes: app.notes, noteID: editor.note.id)
+            }
+        }
+        .padding(.horizontal, SNSpacing.xs)
+        .frame(height: 44)
+        .snAnimation(SNMotion.snappy, value: showsFormatting)
+    }
+}
+
+/// "⋯" menu with Pin, Duplicate and Move to Trash (note card and list rows).
+struct NoteActionsMenu: View {
+    let notes: NotesModel
+    let noteID: UUID
+    var onOpenChange: (Bool) -> Void = { _ in }
+
+    var body: some View {
+        let isPinned = notes.isPinned(noteID)
+        SNDropdown(minWidth: 190, showsChevron: false, onOpenChange: onOpenChange) {
+            [
+                .item(SNMenuItem(title: isPinned ? "Unpin" : "Pin", icon: isPinned ? "pin.slash" : "pin", shortcut: "⇧⌘P") { notes.togglePin(noteID) }),
+                .item(SNMenuItem(title: "Duplicate", icon: "plus.square.on.square", shortcut: "⌘D") { notes.duplicate(noteID) }),
+                .divider(),
+                .item(SNMenuItem(title: "Move to Trash", icon: "trash", isDestructive: true, shortcut: "⌘⌫") { notes.moveToTrash(noteID) }),
+            ]
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
+        }
+        .foregroundStyle(SNColor.textPrimary)
+        .hoverLabel("Note actions")
+        .accessibilityLabel("Note actions")
     }
 }
 

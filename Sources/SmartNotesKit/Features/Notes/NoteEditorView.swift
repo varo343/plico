@@ -59,23 +59,11 @@ struct NoteEditorView: View {
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, SNSpacing.xl + SNSpacing.xs)
-                .padding(.top, 44)
+                .padding(.top, SNSpacing.xxs)
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
         }
-        // Floating formatting bar: shown on selection or via the toolbar toggle.
-        // It overlays (never pushes) text, and stays clear of the New Note button.
-        .overlay(alignment: .bottom) {
-            if model.hasTextSelection || model.showsFormattingBar {
-                NoteEditorToolbar(model: model)
-                    .padding(.leading, SNSpacing.m)
-                    .padding(.trailing, 104)
-                    .padding(.bottom, SNSpacing.l)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.12), value: model.hasTextSelection || model.showsFormattingBar)
         .modifier(SlashMenuPresenter(model: model))
         .sheet(isPresented: Binding(get: { model.linkDraft != nil }, set: { if !$0 { model.cancelLinkEditing() } })) {
             LinkEditorSheet(model: model)
@@ -217,6 +205,8 @@ private struct BlockRow: View {
                     Image(systemName: block.isChecked ? "checkmark.square.fill" : "square")
                         .font(.system(size: style.baseSize))
                         .foregroundStyle(block.isChecked ? SNColor.focusRing : SNColor.textSecondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: block.isChecked)
                 }
                 .buttonStyle(SNIconButtonStyle(shape: .rounded(5), size: CGSize(width: 22, height: 22)))
                 .accessibilityLabel("Checklist item")

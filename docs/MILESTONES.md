@@ -190,6 +190,23 @@ Outlook items already exist (M0) and are tested; sign-in, Graph fetch and the Me
 **Manual checks pending:** open the Priority, sort, ⋯ and date menus: they should appear right under their
 button; hover the switcher icons; drag the list edge; ⌃⌘S; ⌘,.
 
+## Design iteration 4 (your feedback, Oct 17) ✅ automated · 🟡 manual checks pending
+- ✅ "Aa" and "⋯" moved to a top bar in the note card; the formatting bar appears there (top center)
+- ✅ Responsive formatting bar: full version when it fits, otherwise a compact one with a "more" menu
+  (lists, strikethrough, code, font, size); block-type names truncate with an ellipsis, never wrap
+- ✅ Motion everywhere (all off with Reduce Motion): spring press on buttons, rows, cards and tiles;
+  sliding indicator in the section switcher and size selector; menus pop in; menu icons jiggle on hover;
+  checkbox bounce; crossfade between sections and notes; animated list reordering; undo banner slides in
+- ✅ Settings redesigned with its own components: theme preview tiles, font "Aa" tiles, segmented size
+  selector, note-like preview, rows with tinted organic icons, coral danger zone
+- ✅ Tags: no icons, words carry the meaning ("Planned today" vs "Due today"); hand-drawn irregular
+  background (fixed shapes per tone, never random) with a slight tilt
+- ✅ Hover "⋯" on note rows: Pin/Unpin, Duplicate, Move to Trash (stays visible while its menu is open)
+- ✅ 188 tests (2 consecutive runs)
+
+**Manual checks pending:** hover a note row and use its ⋯; select text and check the top formatting bar;
+narrow the window to see the compact bar; click around to feel the press/slide animations.
+
 ## Spec acceptance items already covered by M0 tests
 - Formatting persists across relaunch (on-disk container reopen test)
 - Duplicate: new IDs, original unaffected

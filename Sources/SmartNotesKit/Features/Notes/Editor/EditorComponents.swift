@@ -62,34 +62,95 @@ struct NoteEditorToolbar: View {
     let model: NoteEditorModel
 
     var body: some View {
-        HStack(spacing: 1) {
-            blockTypeMenu
-            blockButton(.checklistItem, symbol: "checklist", label: "Checklist", shortcut: "⇧⌘L")
-            blockButton(.bulletItem, symbol: "list.bullet", label: "Bulleted list", shortcut: "⇧⌘7")
-            blockButton(.numberedItem, symbol: "list.number", label: "Numbered list", shortcut: "⇧⌘8")
-            divider
-            markButton(.bold, symbol: "bold", label: "Bold", shortcut: "⌘B")
-            markButton(.italic, symbol: "italic", label: "Italic", shortcut: "⌘I")
-            markButton(.underline, symbol: "underline", label: "Underline", shortcut: "⌘U")
-            markButton(.strikethrough, symbol: "strikethrough", label: "Strikethrough", shortcut: "⇧⌘X")
-            markButton(.code, symbol: "chevron.left.forwardslash.chevron.right", label: "Inline code", shortcut: nil)
-            Button { EditorActions.editLink() } label: { icon("link") }
-                .buttonStyle(SNIconButtonStyle(shape: .capsule))
-                .hoverLabel("Link  ⌘K", edge: .top)
-                .accessibilityLabel("Link")
-            divider
-            fontMenu
-            sizeMenu
+        // Full bar when there's room; otherwise a compact bar whose extra
+        // controls move into a "more" menu. Labels never wrap.
+        ViewThatFits(in: .horizontal) {
+            bar { fullControls }
+            bar { compactControls }
         }
-        .foregroundStyle(SNColor.textPrimary)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 4)
-        .background(SNColor.card, in: Capsule())
-        .overlay(Capsule().strokeBorder(SNColor.borderSubtle, lineWidth: 1))
-        .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
-        .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Formatting")
+    }
+
+    private func bar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 1) { content() }
+            .foregroundStyle(SNColor.textPrimary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .background(SNColor.card, in: Capsule())
+            .overlay(Capsule().strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+            .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+            .fixedSize()
+    }
+
+    @ViewBuilder
+    private var fullControls: some View {
+        blockTypeMenu
+        blockButton(.checklistItem, symbol: "checklist", label: "Checklist", shortcut: "⇧⌘L")
+        blockButton(.bulletItem, symbol: "list.bullet", label: "Bulleted list", shortcut: "⇧⌘7")
+        blockButton(.numberedItem, symbol: "list.number", label: "Numbered list", shortcut: "⇧⌘8")
+        divider
+        markButtons
+        divider
+        fontMenu
+        sizeMenu
+    }
+
+    @ViewBuilder
+    private var compactControls: some View {
+        blockTypeMenu
+        divider
+        markButton(.bold, symbol: "bold", label: "Bold", shortcut: "⌘B")
+        markButton(.italic, symbol: "italic", label: "Italic", shortcut: "⌘I")
+        markButton(.underline, symbol: "underline", label: "Underline", shortcut: "⌘U")
+        linkButton
+        moreMenu
+    }
+
+    @ViewBuilder
+    private var markButtons: some View {
+        markButton(.bold, symbol: "bold", label: "Bold", shortcut: "⌘B")
+        markButton(.italic, symbol: "italic", label: "Italic", shortcut: "⌘I")
+        markButton(.underline, symbol: "underline", label: "Underline", shortcut: "⌘U")
+        markButton(.strikethrough, symbol: "strikethrough", label: "Strikethrough", shortcut: "⇧⌘X")
+        markButton(.code, symbol: "chevron.left.forwardslash.chevron.right", label: "Inline code", shortcut: nil)
+        linkButton
+    }
+
+    private var linkButton: some View {
+        Button { EditorActions.editLink() } label: { icon("link") }
+            .buttonStyle(SNIconButtonStyle(shape: .capsule))
+            .hoverLabel("Link  ⌘K")
+            .accessibilityLabel("Link")
+    }
+
+    /// Compact bar: everything that didn't fit, in one menu.
+    private var moreMenu: some View {
+        SNDropdown(minWidth: 210, shape: .capsule, showsChevron: false) {
+            let family = model.selectionFontFamily
+            let size = model.selectionFontSize
+            return [.header("Blocks")]
+                + [BlockType.checklistItem, .bulletItem, .numberedItem].map { type in
+                    .item(SNMenuItem(title: type.menuTitle, icon: type.symbol, isChecked: model.activeBlock?.type == type) {
+                        model.setBlockType(model.activeBlock?.type == type ? .paragraph : type)
+                    })
+                }
+                + [.divider(),
+                   .item(SNMenuItem(title: "Strikethrough", icon: "strikethrough", shortcut: "⇧⌘X") { EditorActions.toggle(.strikethrough) }),
+                   .item(SNMenuItem(title: "Inline code", icon: "chevron.left.forwardslash.chevron.right") { EditorActions.toggle(.code) }),
+                   .header("Font")]
+                + FontFamilyPreset.allCases.map { option in
+                    .item(SNMenuItem(title: option.menuTitle, icon: option.symbol, isChecked: family == option) { model.setFontFamily(option) })
+                }
+                + [.header("Size")]
+                + FontSizePreset.allCases.map { option in
+                    .item(SNMenuItem(title: "\(option.rawValue) pt", isChecked: size == option) { model.setFontSize(option) })
+                }
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 12, weight: .semibold))
+        }
+        .hoverLabel("More formatting")
+        .accessibilityLabel("More formatting")
     }
 
     private var divider: some View {
@@ -104,7 +165,7 @@ struct NoteEditorToolbar: View {
         let isOn = model.selectionMarks.contains(mark) && model.hasTextSelection
         return Button { EditorActions.toggle(mark) } label: { icon(symbol) }
             .buttonStyle(SNIconButtonStyle(isActive: isOn, shape: .capsule))
-            .hoverLabel(shortcut.map { "\(label)  \($0)" } ?? label, edge: .top)
+            .hoverLabel(shortcut.map { "\(label)  \($0)" } ?? label)
             .accessibilityLabel(label)
             .accessibilityValue(isOn ? "On" : "Off")
     }
@@ -114,7 +175,7 @@ struct NoteEditorToolbar: View {
         let isOn = model.activeBlock?.type == type
         return Button { model.setBlockType(isOn ? .paragraph : type) } label: { icon(symbol) }
             .buttonStyle(SNIconButtonStyle(isActive: isOn, shape: .capsule))
-            .hoverLabel("\(label)  \(shortcut)  ·  /\(type.slashName)", edge: .top)
+            .hoverLabel("\(label)  \(shortcut)  ·  /\(type.slashName)")
             .accessibilityLabel(label)
             .accessibilityValue(isOn ? "On" : "Off")
     }
@@ -126,9 +187,14 @@ struct NoteEditorToolbar: View {
                                  shortcut: "/" + type.slashName) { model.setBlockType(type) })
             }
         } label: {
-            Text(model.activeBlock?.type.menuTitle ?? "Body").font(.system(size: 12, weight: .semibold))
+            // Never wraps: long names ("Bulleted list") truncate with an ellipsis.
+            Text(model.activeBlock?.type.menuTitle ?? "Body")
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 84, alignment: .leading)
         }
-        .hoverLabel("Block type", edge: .top)
+        .hoverLabel("Block type")
         .accessibilityLabel("Block type")
     }
 
@@ -143,7 +209,7 @@ struct NoteEditorToolbar: View {
         } label: {
             Text("Font").font(.system(size: 12, weight: .medium))
         }
-        .hoverLabel("Font · selection or whole block", edge: .top)
+        .hoverLabel("Font · selection or whole block")
         .accessibilityLabel("Font")
     }
 
@@ -158,7 +224,7 @@ struct NoteEditorToolbar: View {
         } label: {
             Text("Size").font(.system(size: 12, weight: .medium))
         }
-        .hoverLabel("Text size · selection or whole block", edge: .top)
+        .hoverLabel("Text size · selection or whole block")
         .accessibilityLabel("Text size")
     }
 }
