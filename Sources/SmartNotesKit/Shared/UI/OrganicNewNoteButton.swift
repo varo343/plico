@@ -11,9 +11,10 @@ public struct OrganicNewNoteButton: View {
     }
 
     public var body: some View {
+        // No `.focusable()`: clicking must not leave a focus ring. With Full
+        // Keyboard Access the button is still reachable with Tab.
         Button(action: action) { EmptyView() }
             .buttonStyle(BlobButtonStyle(isFocused: isFocused))
-            .focusable()
             .focused($isFocused)
             .focusEffectDisabled()
             .accessibilityLabel("New Note")

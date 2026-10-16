@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// The four primary destinations (switched from the list column header).
-/// No Archive; Settings is not a destination.
-public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable {
-    case notes, today, mentions, trash
+/// Sections of the app, switched from the list column header.
+/// No Archive. Settings is a section like the others (your request, Oct 17).
+public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case notes, today, mentions, trash, settings
+
+    /// The four content sections (⌘1–⌘4); Settings uses ⌘,.
+    public static let primary: [SidebarDestination] = [.notes, .today, .mentions, .trash]
 
     public var id: String { rawValue }
 
@@ -13,6 +16,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable {
         case .today: "Today"
         case .mentions: "Mentions"
         case .trash: "Trash"
+        case .settings: "Settings"
         }
     }
 
@@ -22,6 +26,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable {
         case .today: "sun.max"
         case .mentions: "envelope"
         case .trash: "trash"
+        case .settings: "gearshape"
         }
     }
 
@@ -31,7 +36,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable {
     var showsEditor: Bool { self == .notes || self == .today }
 }
 
-/// Three-column layout: sidebar · list · editor.
+/// Layout: list column (with section switcher) · note card.
 public struct RootView: View {
     @Bindable private var app: AppModel
 
@@ -40,21 +45,23 @@ public struct RootView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                SectionSwitcher(selection: $app.destination)
-                    .padding(.horizontal, SNSpacing.m)
-                    .padding(.top, SNSpacing.xxs)
-                    .padding(.bottom, SNSpacing.s)
-                    .zIndex(1) // hover labels draw above the column content
-                content
+        GeometryReader { proxy in
+            let listWidth = effectiveListWidth(windowWidth: proxy.size.width)
+            HStack(spacing: 0) {
+                if app.isListVisible {
+                    listColumn
+                        .frame(width: listWidth)
+                        .overlay(alignment: .trailing) { ColumnResizeHandle(width: $storedListWidth, current: listWidth) }
+                }
+                noteCard
+                    .padding(.vertical, Self.cardMargin)
+                    .padding(.trailing, Self.cardMargin)
+                    .padding(.leading, app.isListVisible ? 0 : Self.cardMargin)
+                    .padding(.top, app.isListVisible ? 0 : Self.trafficLightsHeight)
             }
-            .background(SNColor.card)
-            .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 380)
-        } detail: {
-            detail
-                .frame(minWidth: 420)
         }
+        .background(SNColor.sidebar)
+        .ignoresSafeArea(.container, edges: .top) // content runs under the hidden title bar
         .overlay(alignment: .bottomTrailing) {
             if app.destination.allowsCreation {
                 OrganicNewNoteButton { app.createNote() }
@@ -69,9 +76,6 @@ public struct RootView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 520)
-        .navigationTitle("")
-        // Let each column's warm surface run up under the title bar.
-        .toolbarBackground(.hidden, for: .windowToolbar)
         .tint(SNColor.focusRing)
         .alert("Something went wrong", isPresented: Binding(
             get: { app.notes.errorMessage != nil },
@@ -83,6 +87,56 @@ public struct RootView: View {
         }
     }
 
+    // MARK: Layout
+
+    private static let cardMargin: CGFloat = 8
+    /// Space kept clear for the window's traffic-light buttons.
+    private static let trafficLightsWidth: CGFloat = 78
+    private static let trafficLightsHeight: CGFloat = 36
+    private static let minimumCardWidth: CGFloat = 400
+    @AppStorage("SmartNotes.listColumnWidth") private var storedListWidth: Double = 320
+
+    /// The list never squeezes the note below a readable width.
+    private func effectiveListWidth(windowWidth: CGFloat) -> CGFloat {
+        let available = windowWidth - Self.minimumCardWidth - Self.cardMargin * 2
+        return max(ColumnResizeHandle.minWidth, min(CGFloat(storedListWidth), available))
+    }
+
+    private var listColumn: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Spacer().frame(width: Self.trafficLightsWidth)
+                SectionSwitcher(selection: $app.destination)
+                Spacer(minLength: 0)
+            }
+            .frame(height: 30) // vertically centered with the traffic lights
+            .padding(.top, 1)
+            .padding(.trailing, SNSpacing.s)
+            .padding(.bottom, SNSpacing.s)
+            content
+        }
+    }
+
+    /// The Linear-style card that holds the note (or the section's detail).
+    private var noteCard: some View {
+        detail
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(SNColor.card)
+            .clipShape(RoundedRectangle(cornerRadius: SNRadius.standard))
+            .overlay(RoundedRectangle(cornerRadius: SNRadius.standard).strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+            .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+            .overlay(alignment: .topLeading) {
+                Button { app.isListVisible.toggle() } label: {
+                    Image(systemName: "sidebar.left").font(.system(size: 13))
+                }
+                .buttonStyle(SNIconButtonStyle(isActive: !app.isListVisible))
+                .foregroundStyle(SNColor.textSecondary)
+                .help(app.isListVisible ? "Hide list (⌃⌘S)" : "Show list (⌃⌘S)")
+                .accessibilityLabel(app.isListVisible ? "Hide list" : "Show list")
+                .padding(8)
+            }
+    }
+
     @ViewBuilder
     private var content: some View {
         switch app.destination {
@@ -92,10 +146,11 @@ public struct RootView: View {
             TrashView(model: app.notes)
         case .today:
             TodayView(today: app.today, notes: app.notes) { app.destination = .notes }
+        case .settings:
+            SettingsPaneList(selection: $app.settingsPane)
         case .mentions:
             EmptyState(symbol: "envelope", tint: SNColor.accentCoral, title: "Outlook isn't set up",
                        message: "Mentions will show Outlook messages you choose to follow, such as flagged mail. This version doesn't connect to Outlook yet.")
-                .background(SNColor.card)
         }
     }
 
@@ -107,6 +162,8 @@ public struct RootView: View {
         } else {
             Group {
                 switch app.destination {
+                case .settings:
+                    SettingsPaneView(app: app, pane: app.settingsPane)
                 case .trash:
                     EmptyState(symbol: "arrow.uturn.backward", tint: SNColor.borderSubtle, title: "Restore a note to edit it", message: "")
                 case .mentions:
@@ -120,7 +177,6 @@ public struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SNColor.canvas)
         }
     }
 }

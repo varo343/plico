@@ -113,30 +113,8 @@ private struct DateField: View {
             }
             .padding(.horizontal, 6)
         } panel: { dismiss in
-            VStack(alignment: .leading, spacing: SNSpacing.s) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(title) date").font(.system(size: 13, weight: .semibold))
-                    Text(explanation).font(SNFont.secondary).foregroundStyle(SNColor.textSecondary)
-                }
-                DatePicker(
-                    title,
-                    selection: Binding(get: { (day ?? today).startDate() }, set: { change(LocalDay(date: $0)) }),
-                    displayedComponents: .date
-                )
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-                HStack(spacing: SNSpacing.xxs) {
-                    Button("Today") { change(today); dismiss() }
-                    Button("Tomorrow") { change(today.adding(days: 1)); dismiss() }
-                    Button("Next week") { change(today.adding(days: 7)); dismiss() }
-                    Spacer(minLength: SNSpacing.xs)
-                    Button("Clear") { change(nil); dismiss() }
-                        .disabled(day == nil)
-                }
-                .buttonStyle(SNCapsuleButtonStyle())
-            }
-            .padding(SNSpacing.s)
-            .frame(width: 300)
+            DatePickerPanel(title: "\(title) date", explanation: explanation, selected: day, today: today,
+                            change: change, dismiss: dismiss)
         }
         .hoverLabel("\(title) date")
         .accessibilityLabel(day.map { "\(title) \($0.relativeLabel(today: today))" } ?? "Set \(title.lowercased()) date")

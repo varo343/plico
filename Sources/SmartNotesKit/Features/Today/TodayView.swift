@@ -35,7 +35,6 @@ struct TodayView: View {
                 }
             }
         }
-        .background(SNColor.card)
     }
 
     private var header: some View {
@@ -111,12 +110,13 @@ private struct TodayCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(SNSpacing.s)
-            .background(SNColor.canvas, in: RoundedRectangle(cornerRadius: SNRadius.standard))
+            .background(isHovered && !isSelected ? SNColor.borderSubtle.opacity(0.35) : SNColor.card,
+                        in: RoundedRectangle(cornerRadius: SNRadius.standard))
             .overlay(
                 RoundedRectangle(cornerRadius: SNRadius.standard)
-                    .stroke(isSelected || isHovered ? SNColor.outline.opacity(0.8) : SNColor.borderSubtle,
-                            lineWidth: isSelected ? 1.5 : 1)
+                    .strokeBorder(isSelected ? SNColor.focusRing.opacity(0.6) : SNColor.borderSubtle, lineWidth: 1)
             )
+            .shadow(color: .black.opacity(isSelected ? 0.06 : 0), radius: 3, y: 1)
             .contentShape(RoundedRectangle(cornerRadius: SNRadius.standard))
         }
         .buttonStyle(.plain)

@@ -1,53 +1,68 @@
 import SwiftUI
 
-/// Icon-only switcher for the four destinations (labels appear on hover),
-/// plus Settings. Replaces the sidebar. Concentric: container radius 12 with
-/// 3 pt padding, items radius 9.
+/// Icon-only switcher for the sections. Hovering an icon morphs it into its
+/// name. Concentric: container radius 10 with 3 pt padding → items radius 7.
 struct SectionSwitcher: View {
     @Binding var selection: SidebarDestination
+    @State private var hovered: SidebarDestination?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let radius: CGFloat = 12
+    /// `hovered` sets the initial hover state (used to render the morph).
+    init(selection: Binding<SidebarDestination>, hovered: SidebarDestination? = nil) {
+        _selection = selection
+        _hovered = State(initialValue: hovered)
+    }
+
+    private static let radius: CGFloat = 10
     private static let padding: CGFloat = 3
 
     var body: some View {
-        HStack(spacing: SNSpacing.xs) {
-            HStack(spacing: 2) {
-                ForEach(SidebarDestination.allCases) { destination in
-                    item(destination)
-                }
+        HStack(spacing: 1) {
+            ForEach(SidebarDestination.allCases) { destination in
+                item(destination)
             }
-            .padding(Self.padding)
-            .background(SNColor.canvas, in: RoundedRectangle(cornerRadius: Self.radius))
-            .overlay(RoundedRectangle(cornerRadius: Self.radius).stroke(SNColor.borderSubtle))
-
-            Spacer(minLength: 0)
-
-            SettingsLink {
-                Image(systemName: "gearshape").font(.system(size: 13, weight: .medium))
-            }
-            .buttonStyle(SNIconButtonStyle(size: CGSize(width: 30, height: 30)))
-            .hoverLabel("Settings  ⌘,")
-            .accessibilityLabel("Settings")
         }
+        .padding(Self.padding)
+        .background(SNColor.borderSubtle.opacity(0.45), in: RoundedRectangle(cornerRadius: Self.radius))
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: hovered)
     }
 
     private func item(_ destination: SidebarDestination) -> some View {
         let isSelected = selection == destination
+        let showsName = hovered == destination
         let innerRadius = Self.radius - Self.padding
         return Button { selection = destination } label: {
-            Image(systemName: isSelected ? destination.selectedSymbol : destination.symbol)
-                .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
-                .frame(width: 38, height: 28)
-                .background {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: innerRadius).fill(SNColor.card)
-                            .overlay(RoundedRectangle(cornerRadius: innerRadius).stroke(SNColor.outline.opacity(0.85), lineWidth: 1.2))
-                    }
+            Group {
+                if showsName {
+                    Text(destination.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .fixedSize()
+                        .padding(.horizontal, 10)
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: isSelected ? destination.selectedSymbol : destination.symbol)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                        .frame(width: 34)
+                        .transition(.opacity)
                 }
+            }
+            .frame(height: 26)
+            .foregroundStyle(isSelected ? SNColor.textPrimary : SNColor.textSecondary)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: innerRadius).fill(SNColor.card)
+                        .shadow(color: .black.opacity(0.08), radius: 1.5, y: 1)
+                } else if showsName {
+                    RoundedRectangle(cornerRadius: innerRadius).fill(SNColor.card.opacity(0.6))
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: innerRadius))
         }
-        .buttonStyle(SNIconButtonStyle(shape: .rounded(innerRadius), size: CGSize(width: 38, height: 28)))
-        .foregroundStyle(isSelected ? SNColor.textPrimary : SNColor.textSecondary)
-        .hoverLabel("\(destination.title)  ⌘\(destination.shortcutNumber)")
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { hovered = destination } else if hovered == destination { hovered = nil }
+        }
+        .help(destination.shortcutHint)
         .accessibilityLabel(destination.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -60,10 +75,14 @@ extension SidebarDestination {
         case .today: "sun.max.fill"
         case .mentions: "envelope.fill"
         case .trash: "trash.fill"
+        case .settings: "gearshape.fill"
         }
     }
 
-    var shortcutNumber: Int {
-        (Self.allCases.firstIndex(of: self) ?? 0) + 1
+    var shortcutHint: String {
+        switch self {
+        case .settings: "Settings (⌘,)"
+        default: "\(title) (⌘\((Self.primary.firstIndex(of: self) ?? 0) + 1))"
+        }
     }
 }

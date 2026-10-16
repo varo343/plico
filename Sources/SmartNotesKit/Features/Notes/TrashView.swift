@@ -36,7 +36,6 @@ struct TrashView: View {
                 }
             }
         }
-        .background(SNColor.card)
         .confirmDestructiveAction(
             "Delete “\(pendingDelete?.displayTitle ?? "")” permanently?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),

@@ -136,21 +136,21 @@ enum SNMenuEntry: Identifiable {
     }
 }
 
-/// Visual container shared by every floating surface: card, ink outline and a
-/// hard "cartoon" offset shadow. Inner items use radius `radius - padding`
-/// so the corners are concentric.
+/// Visual container shared by every floating surface (menus, calendar, slash
+/// menu): quiet card, hairline border, soft shadow. Inner items use radius
+/// `radius - padding`, so the corners are concentric.
 struct SNFloatingSurface<Content: View>: View {
-    static var radius: CGFloat { 14 }
-    static var padding: CGFloat { 5 }
+    static var radius: CGFloat { 12 }
+    static var padding: CGFloat { 4 }
     @ViewBuilder let content: Content
 
     var body: some View {
         content
             .padding(Self.padding)
             .background(SNColor.card, in: RoundedRectangle(cornerRadius: Self.radius))
-            .overlay(RoundedRectangle(cornerRadius: Self.radius).stroke(SNColor.outline.opacity(0.85), lineWidth: 1.5))
-            .background(RoundedRectangle(cornerRadius: Self.radius).fill(SNColor.outline.opacity(0.85)).offset(x: 2, y: 3))
-            .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+            .overlay(RoundedRectangle(cornerRadius: Self.radius).strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+            .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+            .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
     }
 }
 
@@ -262,7 +262,7 @@ struct SNDropdown<Label: View>: View {
     let entries: () -> [SNMenuEntry]
     @ViewBuilder let label: () -> Label
     @State private var controller = FloatingPanelController()
-    @State private var frame: CGRect = .zero
+    @State private var anchor = AnchorBox()
     @State private var isOpen = false
 
     var body: some View {
@@ -278,15 +278,15 @@ struct SNDropdown<Label: View>: View {
             .padding(.horizontal, showsChevron ? 6 : 0)
         }
         .buttonStyle(SNIconButtonStyle(isActive: isOpen, shape: shape))
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+        .background(AnchorReader(box: anchor))
         .onDisappear { controller.close() }
     }
 
     private func open() {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let anchor = window.screenRect(forGlobal: frame) else { return }
+        guard let window = anchor.view?.window, let rect = anchor.screenRect else { return }
         controller.onClose = { isOpen = false }
         controller.show(SNMenuList(entries: entries(), minWidth: minWidth) { controller.close() },
-                        below: anchor, in: window, acceptsKey: true)
+                        below: rect, in: window, acceptsKey: true)
         isOpen = true
     }
 }
@@ -297,30 +297,50 @@ struct SNPopoverButton<Label: View, Panel: View>: View {
     @ViewBuilder let label: () -> Label
     @ViewBuilder let panel: (_ dismiss: @escaping () -> Void) -> Panel
     @State private var controller = FloatingPanelController()
-    @State private var frame: CGRect = .zero
+    @State private var anchor = AnchorBox()
     @State private var isOpen = false
 
     var body: some View {
         Button { isOpen ? controller.close() : open() } label: { label() }
             .buttonStyle(SNIconButtonStyle(isActive: isOpen, shape: .capsule, size: CGSize(width: 0, height: 24)))
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+            .background(AnchorReader(box: anchor))
             .onDisappear { controller.close() }
     }
 
     private func open() {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let anchor = window.screenRect(forGlobal: frame) else { return }
+        guard let window = anchor.view?.window, let rect = anchor.screenRect else { return }
         controller.onClose = { isOpen = false }
-        controller.show(SNFloatingSurface { panel { controller.close() } }.fixedSize(), below: anchor, in: window, acceptsKey: true)
+        controller.show(SNFloatingSurface { panel { controller.close() } }.fixedSize(), below: rect, in: window, acceptsKey: true)
         isOpen = true
     }
 }
 
-extension NSWindow {
-    /// Converts a SwiftUI `.global` rect (top-left origin in the window's
-    /// content view) to screen coordinates.
-    func screenRect(forGlobal rect: CGRect) -> NSRect? {
-        guard let content = contentView, rect != .zero else { return nil }
-        let flipped = NSRect(x: rect.minX, y: content.bounds.height - rect.maxY, width: rect.width, height: rect.height)
-        return convertToScreen(content.convert(flipped, to: nil))
+// MARK: - Anchoring
+
+/// Holds the AppKit view behind a SwiftUI control. Positions come from AppKit
+/// (view → window → screen), which is correct no matter how many hosting
+/// views or split-view columns sit in between. (SwiftUI's `.global` space is
+/// per hosting view, which put menus in the wrong place.)
+@MainActor
+final class AnchorBox {
+    weak var view: NSView?
+
+    var screenRect: NSRect? {
+        guard let view, let window = view.window else { return nil }
+        return window.convertToScreen(view.convert(view.bounds, to: nil))
+    }
+}
+
+struct AnchorReader: NSViewRepresentable {
+    let box: AnchorBox
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        box.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        box.view = view
     }
 }

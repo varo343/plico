@@ -327,11 +327,16 @@ final class EditorHarness {
         window.isReleasedWhenClosed = false
         defer { window.close() }
         window.contentView = NSHostingView(rootView: RootView(app: app))
-        try? await Task.sleep(for: .milliseconds(700))
 
         func collect(_ view: NSView) -> [BlockNSTextView] {
             (view as? BlockNSTextView).map { [$0] } ?? view.subviews.flatMap(collect)
         }
+        // Wait for the editor to lay out (parallel suite: no fixed delay).
+        let deadline = ContinuousClock.now + .seconds(5)
+        while collect(window.contentView!).filter({ $0.bounds.width > 0 }).count < 5, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+        try? await Task.sleep(for: .milliseconds(200))
         let views = collect(window.contentView!).sorted {
             $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY
         }

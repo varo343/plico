@@ -85,9 +85,9 @@ struct NoteEditorToolbar: View {
         .padding(.horizontal, 5)
         .padding(.vertical, 4)
         .background(SNColor.card, in: Capsule())
-        .overlay(Capsule().stroke(SNColor.outline.opacity(0.85), lineWidth: 1.5))
-        .background(Capsule().fill(SNColor.outline.opacity(0.85)).offset(x: 2, y: 3))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        .overlay(Capsule().strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+        .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+        .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Formatting")
     }

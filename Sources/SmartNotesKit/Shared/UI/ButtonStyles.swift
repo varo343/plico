@@ -75,9 +75,9 @@ private struct SNCapsuleButtonBody: View {
             .padding(.vertical, 5)
             .background(
                 Capsule().fill(configuration.isPressed ? SNColor.borderSubtle
-                    : (isHovered ? (isDestructive ? SNColor.accentCoral : SNColor.borderSubtle.opacity(0.5)) : SNColor.card))
+                    : (isHovered ? (isDestructive ? SNColor.accentCoral : SNColor.borderSubtle.opacity(0.6)) : SNColor.card))
             )
-            .overlay(Capsule().stroke(SNColor.outline.opacity(isHovered ? 0.85 : 0.25), lineWidth: isHovered ? 1.5 : 1))
+            .overlay(Capsule().strokeBorder(SNColor.borderSubtle, lineWidth: 1))
             .contentShape(Capsule())
             .opacity(isEnabled ? 1 : 0.55)
             .onHover { isHovered = $0 && isEnabled }
@@ -110,14 +110,14 @@ struct HoverLabel: ViewModifier {
             .overlay(alignment: edge == .bottom ? .bottom : .top) {
                 if isShown {
                     Text(text)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(SNColor.textPrimary)
                         .fixedSize()
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(SNColor.card, in: Capsule())
-                        .overlay(Capsule().stroke(SNColor.outline.opacity(0.85), lineWidth: 1.2))
-                        .background(Capsule().fill(SNColor.outline.opacity(0.85)).offset(y: 1.5))
+                        .background(SNColor.card, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                         .offset(y: edge == .bottom ? 30 : -30)
                         .transition(reduceMotion ? .identity : .opacity)
                         .allowsHitTesting(false)

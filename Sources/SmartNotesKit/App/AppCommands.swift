@@ -64,8 +64,16 @@ public struct AppCommands: Commands {
             Button("Move Block Up") { app?.notes.editor?.moveBlock(by: -1) }.keyboardShortcut(.upArrow, modifiers: [.command, .control])
             Button("Move Block Down") { app?.notes.editor?.moveBlock(by: 1) }.keyboardShortcut(.downArrow, modifiers: [.command, .control])
         }
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { app?.destination = .settings }
+                .keyboardShortcut(",")
+                .disabled(app == nil)
+        }
         CommandGroup(after: .sidebar) {
-            ForEach(Array(SidebarDestination.allCases.enumerated()), id: \.element) { index, destination in
+            Button(app?.isListVisible == false ? "Show Note List" : "Hide Note List") { app?.isListVisible.toggle() }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+            Divider()
+            ForEach(Array(SidebarDestination.primary.enumerated()), id: \.element) { index, destination in
                 Button(destination.title) { app?.destination = destination }
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
             }

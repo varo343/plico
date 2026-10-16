@@ -32,7 +32,6 @@ struct NotesListView: View {
                 list
             }
         }
-        .background(SNColor.card)
         .onChange(of: model.searchFocusRequest) { searchFocused = true }
     }
 
@@ -86,10 +85,10 @@ struct NotesListView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .background(SNColor.canvas, in: RoundedRectangle(cornerRadius: SNRadius.small))
+        .background(SNColor.card, in: RoundedRectangle(cornerRadius: SNRadius.small))
         .overlay(
             RoundedRectangle(cornerRadius: SNRadius.small)
-                .stroke(searchFocused ? SNColor.focusRing : SNColor.borderSubtle, lineWidth: searchFocused ? 1.5 : 1)
+                .strokeBorder(searchFocused ? SNColor.focusRing.opacity(0.7) : SNColor.borderSubtle, lineWidth: searchFocused ? 1.5 : 1)
         )
     }
 
@@ -294,10 +293,11 @@ struct NoteListRow: View {
     private var rowBackground: some View {
         let shape = RoundedRectangle(cornerRadius: SNRadius.standard)
         if isSelected {
-            shape.fill(SNColor.canvas)
-                .overlay(shape.stroke(isListFocused ? SNColor.focusRing : SNColor.outline.opacity(0.8), lineWidth: 1.5))
+            shape.fill(SNColor.card)
+                .overlay(shape.strokeBorder(isListFocused ? SNColor.focusRing.opacity(0.6) : SNColor.borderSubtle, lineWidth: 1))
+                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
         } else if isHovered {
-            shape.fill(SNColor.borderSubtle.opacity(0.35))
+            shape.fill(SNColor.borderSubtle.opacity(0.45))
         }
     }
 }

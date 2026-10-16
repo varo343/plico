@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The product's badge: tinted capsule, ink outline and a small hard offset
-/// shadow ("sticker"). Meaning is always carried by icon + text, never color alone.
+/// The product's badge: soft tinted capsule. Meaning is always carried by
+/// icon + text, never color alone.
 struct SNBadge: View {
     enum Tone {
         case neutral, mint, sun, coral
@@ -34,11 +34,9 @@ struct SNBadge: View {
         .padding(.horizontal, size == .small ? 6 : 8)
         .padding(.vertical, size == .small ? 1.5 : 3)
         .background(tone.fill, in: Capsule())
-        .overlay(Capsule().stroke(SNColor.outline.opacity(isTinted ? 0.85 : 0.3), lineWidth: isTinted ? 1.2 : 1))
-        .background {
-            if isTinted { Capsule().fill(SNColor.outline.opacity(0.85)).offset(y: 1.5) }
+        .overlay {
+            if !isTinted { Capsule().strokeBorder(SNColor.borderSubtle, lineWidth: 1) }
         }
-        .padding(.bottom, isTinted ? 1.5 : 0)
         .fixedSize()
         .accessibilityElement(children: .combine)
     }

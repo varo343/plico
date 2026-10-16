@@ -171,6 +171,25 @@ Outlook items already exist (M0) and are tested; sign-in, Graph fetch and the Me
 **Manual checks pending:** open each dropdown with mouse and keyboard; type "/" in a note and pick with
 ↑/↓/↩; hover every icon in the switcher; check the date calendar panel.
 
+## Design iteration 3 (your feedback, Oct 17) ✅ automated · 🟡 manual checks pending
+- ✅ Section switcher: hovering an icon morphs it into its name; Settings is the fifth section
+- ✅ Cartoon style limited to the primary button (New Note). Menus, tooltips, the formatting bar, badges,
+  selections and empty-state shapes use a normal, rounder style (hairline border, soft shadow)
+- ✅ **Fixed: dropdowns opened in the wrong place.** Positions came from SwiftUI's `.global` space, which is
+  per hosting view; they are now taken from the control's real AppKit view (`AnchorBox`). Regression test.
+- ✅ New Planned/Due date picker (`DatePickerPanel`): quick choices with day hints, Monday-first month grid
+  (follows locale), today dot, selected pill, keyboard (arrows/↩/esc), concentric radii (12 − 4 = 8)
+- ✅ Settings is a section: categories in the list column, panel in the card; ⌘, opens it; the separate
+  Settings window is gone; settings menus use the product dropdowns
+- ✅ Linear-style layout: hidden title bar, switcher next to the traffic lights, the note in a rounded card
+  with an 8 pt margin, header moved up; list column resizable (drag its edge, remembered) and hideable
+  (⌃⌘S or the button in the card)
+- ✅ New Note focus ring only for keyboard focus (it appeared after a click)
+- ✅ 188 tests (2 consecutive runs)
+
+**Manual checks pending:** open the Priority, sort, ⋯ and date menus: they should appear right under their
+button; hover the switcher icons; drag the list edge; ⌃⌘S; ⌘,.
+
 ## Spec acceptance items already covered by M0 tests
 - Formatting persists across relaunch (on-disk container reopen test)
 - Duplicate: new IDs, original unaffected

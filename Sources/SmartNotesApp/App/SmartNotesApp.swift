@@ -19,17 +19,9 @@ struct SmartNotesApp: App {
             }
         }
         .defaultSize(width: 1240, height: 800)
-        .windowToolbarStyle(.unified(showsTitle: false))
+        // No title bar: the traffic lights float over the list column (Linear-style).
+        .windowStyle(.hiddenTitleBar)
         .commands { AppCommands(app: try? launch.result.get()) }
-
-        Settings {
-            if case .success(let app) = launch.result {
-                SettingsView(app: app)
-            } else {
-                Text("Settings are unavailable because the notes database couldn't be opened.")
-                    .padding()
-            }
-        }
     }
 }
 

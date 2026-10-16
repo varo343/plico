@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Empty-state illustration: a tinted blob with an ink outline and symbol.
-/// Fixed shapes (never randomized) so it reads as one consistent style.
+/// Empty-state illustration: a soft tinted organic blob with a symbol.
+/// Fixed shape (never randomized) so it reads as one consistent style.
 struct EmptyStateIllustration: View {
     let symbol: String
     var tint: Color = SNColor.accentMint
@@ -9,17 +9,12 @@ struct EmptyStateIllustration: View {
     var body: some View {
         ZStack {
             OrganicBlobShape()
-                .fill(SNColor.outline.opacity(0.85))
-                .offset(x: 2.5, y: 3.5)
-            OrganicBlobShape()
                 .fill(tint)
-            OrganicBlobShape()
-                .stroke(SNColor.outline, style: StrokeStyle(lineWidth: 2.5, lineJoin: .round))
             Image(systemName: symbol)
-                .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(SNColor.outline)
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(SNColor.textPrimary.opacity(0.75))
         }
-        .frame(width: 84, height: 80)
+        .frame(width: 76, height: 72)
         .rotationEffect(.degrees(-5))
         .accessibilityHidden(true)
     }

@@ -59,12 +59,11 @@ struct NoteEditorView: View {
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, SNSpacing.xl + SNSpacing.xs)
-                .padding(.top, SNSpacing.l)
+                .padding(.top, 44)
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
         }
-        .background(SNColor.canvas)
         // Floating formatting bar: shown on selection or via the toolbar toggle.
         // It overlays (never pushes) text, and stays clear of the New Note button.
         .overlay(alignment: .bottom) {

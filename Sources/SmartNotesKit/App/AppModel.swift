@@ -14,6 +14,9 @@ public final class AppModel {
     public var destination: SidebarDestination = .notes {
         didSet { if destination != oldValue { notes.flush() } }
     }
+    public var settingsPane: SettingsPane = .general
+    /// The list column can be hidden to give the note the whole window.
+    public var isListVisible = true
 
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
