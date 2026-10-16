@@ -22,6 +22,14 @@ struct BlockTextActions {
     var onRedo: () -> Void
     var canUndo: () -> Bool
     var canRedo: () -> Bool
+    /// "/query" at the caret changed (nil when there is none).
+    var onSlashToken: (SlashTrigger.Token?, CGRect?) -> Void
+    /// "/name " typed in full.
+    var onSlashCompleted: (SlashCommand, Range<Int>) -> Void
+    var isSlashMenuOpen: () -> Bool
+    var onSlashMove: (Int) -> Void
+    var onSlashConfirm: () -> Void
+    var onSlashDismiss: () -> Void
 }
 
 /// One logical block's text, edited by a TextKit 1 NSTextView. Each block is
@@ -93,16 +101,45 @@ struct BlockTextView: NSViewRepresentable {
             lastContent = content
             view.invalidateIntrinsicContentSize()
             parent?.actions.onChange(content)
+            let caret = view.selectedRange()
+            if caret.length == 0, let (command, range) = SlashTrigger.completedCommand(in: view.string, caret: caret.location) {
+                parent?.actions.onSlashCompleted(command, range)
+            } else {
+                reportSlashToken(in: view)
+            }
+        }
+
+        /// Tells the model about the "/query" at the caret and where to show the menu.
+        func reportSlashToken(in view: BlockNSTextView) {
+            let caret = view.selectedRange()
+            let token = caret.length == 0 ? SlashTrigger.token(in: view.string, caret: caret.location) : nil
+            var anchor: CGRect?
+            if let token {
+                anchor = view.firstRect(forCharacterRange: NSRange(location: token.range.lowerBound, length: 0), actualRange: nil)
+            }
+            parent?.actions.onSlashToken(token, anchor)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isApplying, let view = notification.object as? BlockNSTextView, view.window?.firstResponder === view else { return }
             parent?.actions.onSelectionChange(view.selectedUTF16Range)
+            reportSlashToken(in: view)
         }
 
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             guard let parent, let view = textView as? BlockNSTextView else { return false }
             let selection = view.selectedRange()
+            // While the slash menu is open, navigation keys drive the menu.
+            if parent.actions.isSlashMenuOpen() {
+                switch selector {
+                case #selector(NSResponder.moveUp(_:)): parent.actions.onSlashMove(-1); return true
+                case #selector(NSResponder.moveDown(_:)): parent.actions.onSlashMove(1); return true
+                case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
+                    parent.actions.onSlashConfirm(); return true
+                case #selector(NSResponder.cancelOperation(_:)): parent.actions.onSlashDismiss(); return true
+                default: break
+                }
+            }
             switch selector {
             case #selector(NSResponder.insertNewline(_:)):
                 // Shift+Return is handled in keyDown as a soft break.

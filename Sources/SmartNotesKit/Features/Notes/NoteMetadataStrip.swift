@@ -37,67 +37,62 @@ struct NoteMetadataStrip: View {
             if let editor = notes.editor, editor.note.id == noteID {
                 Button { editor.showsFormattingBar.toggle() } label: {
                     Text("Aa").font(.system(size: 12.5, weight: .semibold))
-                        .frame(width: 30, height: 24)
-                        .background(editor.showsFormattingBar ? SNColor.borderSubtle : .clear, in: RoundedRectangle(cornerRadius: 7))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(SNColor.textPrimary)
-                .help(editor.showsFormattingBar ? "Hide formatting" : "Show formatting")
+                .buttonStyle(SNIconButtonStyle(isActive: editor.showsFormattingBar, size: CGSize(width: 30, height: 26)))
+                .hoverLabel(editor.showsFormattingBar ? "Hide formatting" : "Show formatting")
                 .accessibilityLabel("Formatting controls")
                 .accessibilityValue(editor.showsFormattingBar ? "Shown" : "Hidden")
             }
-            Menu {
-                Button(summary.isPinned ? "Unpin" : "Pin") { notes.togglePin(noteID) }
-                Button("Duplicate") { notes.duplicate(noteID) }
-                Divider()
-                Button("Move to Trash", role: .destructive) { notes.moveToTrash(noteID) }
+            SNDropdown(minWidth: 190, showsChevron: false) {
+                [
+                    .item(SNMenuItem(title: summary.isPinned ? "Unpin" : "Pin", icon: summary.isPinned ? "pin.slash" : "pin", shortcut: "⇧⌘P") { notes.togglePin(noteID) }),
+                    .item(SNMenuItem(title: "Duplicate", icon: "plus.square.on.square", shortcut: "⌘D") { notes.duplicate(noteID) }),
+                    .divider(),
+                    .item(SNMenuItem(title: "Move to Trash", icon: "trash", isDestructive: true, shortcut: "⌘⌫") { notes.moveToTrash(noteID) }),
+                ]
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .frame(width: 30, height: 24)
-            .help("Note actions")
+            .hoverLabel("Note actions")
             .accessibilityLabel("Note actions")
         }
+        .foregroundStyle(SNColor.textPrimary)
     }
 }
 
-/// Priority as a real badge (menus would strip its styling) with a popover of choices.
+/// Priority as a badge with a product dropdown of choices.
 private struct PriorityField: View {
     let priority: Priority
     let change: (Priority) -> Void
-    @State private var isPresented = false
 
     var body: some View {
-        Button { isPresented = true } label: {
+        SNDropdown(minWidth: 170, shape: .capsule, showsChevron: false) {
+            [.header("Priority")] + Priority.allCases.map { option in
+                .item(SNMenuItem(
+                    title: option.label,
+                    badge: option == .none ? AnyView(Text("None").font(.system(size: 13, weight: .medium))) : AnyView(PriorityBadge(option)),
+                    isChecked: option == priority
+                ) { change(option) })
+            }
+        } label: {
             if priority == .none {
-                Label("Priority", systemImage: "flag")
+                Label("Priority", systemImage: "flag").labelStyle(.titleAndIcon)
+                    .font(.system(size: 12)).foregroundStyle(SNColor.textSecondary)
             } else {
                 PriorityBadge(priority)
             }
         }
-        .buttonStyle(MetadataButtonStyle(isSet: priority != .none))
-        .help("Priority (never set automatically)")
+        .hoverLabel("Priority is only set by you")
         .accessibilityLabel("Priority, \(priority.label)")
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            Picker("Priority", selection: Binding(get: { priority }, set: { change($0); isPresented = false })) {
-                ForEach(Priority.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.radioGroup)
-            .padding(SNSpacing.m)
-        }
     }
 }
 
-/// Planned or due date with a calendar popover and quick choices.
+/// Planned or due date with a calendar panel and quick choices.
 private struct DateField: View {
     let kind: DateMetadataChip.Kind
     let day: LocalDay?
     let today: LocalDay
     let change: (LocalDay?) -> Void
-    @State private var isPresented = false
 
     private var title: String { kind == .planned ? "Planned" : "Due" }
     private var explanation: String {
@@ -105,47 +100,51 @@ private struct DateField: View {
     }
 
     var body: some View {
-        Button { isPresented = true } label: {
-            if let day {
-                DateMetadataChip(kind, day: day, today: today)
-            } else {
-                Label(title, systemImage: kind == .planned ? "calendar" : "flag.checkered")
+        SNPopoverButton(isSet: day != nil) {
+            Group {
+                if let day {
+                    DateMetadataChip(kind, day: day, today: today)
+                } else {
+                    Label(title, systemImage: kind == .planned ? "calendar" : "flag.checkered")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 12))
+                        .foregroundStyle(SNColor.textSecondary)
+                }
             }
-        }
-        .buttonStyle(MetadataButtonStyle(isSet: day != nil))
-        .help("\(title) date: \(explanation)")
-        .accessibilityLabel(day.map { "\(title) \($0.relativeLabel(today: today))" } ?? "Set \(title.lowercased()) date")
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            .padding(.horizontal, 6)
+        } panel: { dismiss in
             VStack(alignment: .leading, spacing: SNSpacing.s) {
-                Text("\(title) date").font(SNFont.rowTitle)
-                Text(explanation).font(SNFont.secondary).foregroundStyle(SNColor.textSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(title) date").font(.system(size: 13, weight: .semibold))
+                    Text(explanation).font(SNFont.secondary).foregroundStyle(SNColor.textSecondary)
+                }
                 DatePicker(
                     title,
-                    selection: Binding(
-                        get: { (day ?? today).startDate() },
-                        set: { change(LocalDay(date: $0)) }
-                    ),
+                    selection: Binding(get: { (day ?? today).startDate() }, set: { change(LocalDay(date: $0)) }),
                     displayedComponents: .date
                 )
                 .datePickerStyle(.graphical)
                 .labelsHidden()
-                HStack {
-                    Button("Today") { change(today); isPresented = false }
-                    Button("Tomorrow") { change(today.adding(days: 1)); isPresented = false }
-                    Button("Next Week") { change(today.adding(days: 7)); isPresented = false }
-                    Spacer()
-                    Button("Clear", role: .destructive) { change(nil); isPresented = false }
+                HStack(spacing: SNSpacing.xxs) {
+                    Button("Today") { change(today); dismiss() }
+                    Button("Tomorrow") { change(today.adding(days: 1)); dismiss() }
+                    Button("Next week") { change(today.adding(days: 7)); dismiss() }
+                    Spacer(minLength: SNSpacing.xs)
+                    Button("Clear") { change(nil); dismiss() }
                         .disabled(day == nil)
                 }
+                .buttonStyle(SNCapsuleButtonStyle())
             }
-            .padding(SNSpacing.m)
+            .padding(SNSpacing.s)
             .frame(width: 300)
         }
+        .hoverLabel("\(title) date")
+        .accessibilityLabel(day.map { "\(title) \($0.relativeLabel(today: today))" } ?? "Set \(title.lowercased()) date")
     }
 }
 
 /// Quiet style: unset values are plain secondary text that gains a soft
-/// background on hover; set values show their own chip.
+/// background on hover; set values show their own badge.
 private struct MetadataButtonStyle: ButtonStyle {
     let isSet: Bool
 
@@ -164,10 +163,10 @@ private struct MetadataButtonBody: View {
             .labelStyle(.titleAndIcon)
             .font(.system(size: 12))
             .foregroundStyle(isSet ? SNColor.textPrimary : SNColor.textSecondary)
-            .padding(.horizontal, isSet ? 0 : 7)
-            .padding(.vertical, isSet ? 0 : 3)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
             .background {
-                if !isSet, isHovered { Capsule().fill(SNColor.borderSubtle.opacity(0.5)) }
+                if isHovered { Capsule().fill(SNColor.borderSubtle.opacity(0.55)) }
             }
             .opacity(configuration.isPressed ? 0.6 : 1)
             .contentShape(Capsule())

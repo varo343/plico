@@ -62,6 +62,17 @@ public enum NoteSortMode: String, Codable, CaseIterable, Sendable {
         case .dueDate: "Due Date"
         }
     }
+
+    public var symbol: String {
+        switch self {
+        case .manual: "hand.draw"
+        case .updated: "clock.arrow.circlepath"
+        case .created: "sparkles"
+        case .title: "textformat"
+        case .priority: "exclamationmark.2"
+        case .dueDate: "flag"
+        }
+    }
 }
 
 /// Which notes a query targets. Notes are either active or in Trash (no Archive).

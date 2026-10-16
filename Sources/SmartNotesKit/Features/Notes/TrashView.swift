@@ -15,8 +15,7 @@ struct TrashView: View {
                     .foregroundStyle(SNColor.textSecondary)
                 Spacer()
                 Button("Empty Trash…") { confirmEmpty = true }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(model.trashed.isEmpty ? SNColor.textSecondary : SNColor.textPrimary)
+                    .buttonStyle(SNCapsuleButtonStyle(isDestructive: true))
                     .disabled(model.trashed.isEmpty)
             }
             .padding(.horizontal, SNSpacing.m)
@@ -79,22 +78,13 @@ private struct TrashRow: View {
                 Spacer()
                 Button(action: restore) {
                     Label("Restore", systemImage: "arrow.uturn.backward")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(SNColor.canvas, in: Capsule())
-                        .overlay(Capsule().stroke(SNColor.borderSubtle))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(SNColor.textPrimary)
+                .buttonStyle(SNCapsuleButtonStyle())
                 Button(action: delete) {
-                    Image(systemName: "xmark.bin")
-                        .font(.system(size: 12))
-                        .frame(width: 26, height: 24)
+                    Image(systemName: "xmark.bin").font(.system(size: 12))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(SNColor.textSecondary)
-                .help("Delete permanently…")
+                .buttonStyle(SNIconButtonStyle(shape: .capsule))
+                .hoverLabel("Delete permanently…")
                 .accessibilityLabel("Delete \(note.displayTitle) permanently")
             }
         }

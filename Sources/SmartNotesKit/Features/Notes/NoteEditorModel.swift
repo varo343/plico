@@ -26,6 +26,17 @@ public struct BlockSelection: Equatable, Sendable {
     public var range: Range<Int>
 }
 
+/// The open slash menu: which block, the typed "/query" and the choices.
+public struct SlashMenuState: Equatable {
+    public var blockID: UUID
+    public var range: Range<Int>
+    public var query: String
+    public var commands: [SlashCommand]
+    public var highlighted: Int
+    /// Screen rect of the "/" (where the menu is anchored).
+    public var anchor: CGRect?
+}
+
 /// State for the ⌘K link sheet.
 public struct LinkDraft: Equatable, Sendable {
     public var blockID: UUID
@@ -54,6 +65,9 @@ public final class NoteEditorModel {
     /// Block containing the caret; target of block commands.
     public private(set) var activeBlockID: UUID?
     public var linkDraft: LinkDraft?
+    public private(set) var slashMenu: SlashMenuState?
+    /// A dismissed (Esc) "/" stays dismissed until the caret leaves it.
+    @ObservationIgnored private var dismissedSlash: (blockID: UUID, location: Int)?
     /// Keeps the formatting bar visible without a selection (toolbar toggle).
     public var showsFormattingBar = false
     public var linkError: String?
@@ -79,6 +93,21 @@ public final class NoteEditorModel {
         self.autosaveDelay = autosaveDelay
         self.now = now
         self.onSaved = onSaved
+    }
+
+    /// Font preset shared by the selection (or the caret's run), for menu check marks.
+    public var selectionFontFamily: FontFamilyPreset? {
+        selectionRuns.map(\.fontFamily).allEqual ?? nil
+    }
+
+    public var selectionFontSize: FontSizePreset? {
+        selectionRuns.map(\.fontSize).allEqual ?? nil
+    }
+
+    private var selectionRuns: [TextRun] {
+        guard let selection, let block = note.blocks.first(where: { $0.id == selection.blockID }) else { return [] }
+        let range = selection.range.isEmpty ? 0..<block.content.utf16Length : selection.range
+        return block.content.split(atUTF16Offset: range.lowerBound).tail.split(atUTF16Offset: range.count).head.runs
     }
 
     public var activeBlock: NoteBlock? {
@@ -229,6 +258,61 @@ public final class NoteEditorModel {
 
     public func paste(_ paragraphs: [PastedParagraph], blockID: UUID, range: Range<Int>) {
         apply { try BlockEditing.paste($0, blockID: blockID, range: range, paragraphs: paragraphs) }
+    }
+
+    // MARK: Slash commands
+
+    /// Called by the text view after each edit or caret move with the "/query"
+    /// at the caret (if any) and where it is on screen.
+    public func updateSlashToken(_ token: SlashTrigger.Token?, blockID: UUID, anchor: CGRect?) {
+        guard let token else {
+            if slashMenu?.blockID == blockID { slashMenu = nil }
+            if dismissedSlash?.blockID == blockID { dismissedSlash = nil }
+            return
+        }
+        if let dismissed = dismissedSlash, dismissed.blockID == blockID, dismissed.location == token.range.lowerBound {
+            return
+        }
+        let commands = SlashCommand.matches(token.query)
+        guard !commands.isEmpty else {
+            slashMenu = nil
+            return
+        }
+        let keepHighlight = slashMenu?.blockID == blockID && slashMenu?.query == token.query
+        slashMenu = SlashMenuState(
+            blockID: blockID, range: token.range, query: token.query, commands: commands,
+            highlighted: keepHighlight ? min(slashMenu?.highlighted ?? 0, commands.count - 1) : 0,
+            anchor: anchor ?? slashMenu?.anchor
+        )
+    }
+
+    public var isSlashMenuOpen: Bool { slashMenu != nil }
+
+    public func moveSlashHighlight(by delta: Int) {
+        guard var menu = slashMenu, !menu.commands.isEmpty else { return }
+        menu.highlighted = (menu.highlighted + delta + menu.commands.count) % menu.commands.count
+        slashMenu = menu
+    }
+
+    /// Return/Tab in the menu, or a click on a command.
+    public func applySlashCommand(_ command: SlashCommand? = nil) {
+        guard let menu = slashMenu else { return }
+        let chosen = command ?? menu.commands[menu.highlighted]
+        slashMenu = nil
+        apply { try BlockEditing.applySlashCommand($0, blockID: menu.blockID, removing: menu.range, type: chosen.type) }
+    }
+
+    /// "/name " typed in full: apply without the menu.
+    public func applyCompletedSlashCommand(_ command: SlashCommand, blockID: UUID, removing range: Range<Int>) {
+        slashMenu = nil
+        apply { try BlockEditing.applySlashCommand($0, blockID: blockID, removing: range, type: command.type) }
+    }
+
+    /// Esc: closes the menu and leaves the typed text as it is.
+    public func dismissSlashMenu() {
+        guard let menu = slashMenu else { return }
+        dismissedSlash = (menu.blockID, menu.range.lowerBound)
+        slashMenu = nil
     }
 
     // MARK: Undo
@@ -383,5 +467,13 @@ public final class NoteEditorModel {
             guard !Task.isCancelled else { return }
             self?.flush()
         }
+    }
+}
+
+private extension Array where Element: Equatable {
+    /// The common element if all elements are equal; nil if empty or mixed.
+    var allEqual: Element? {
+        guard let first, allSatisfy({ $0 == first }) else { return nil }
+        return first
     }
 }

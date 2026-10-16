@@ -12,6 +12,8 @@ public enum SNColor {
     public static let accentYellow = dynamic(light: 0xF6C65B, dark: 0xF6C65B)
     public static let accentMint = dynamic(light: 0xD5E9D3, dark: 0x3A5645)
     public static let accentCoral = dynamic(light: 0xF4B9A8, dark: 0x6A4038)
+    /// Soft, opaque yellow for badges (the strong yellow stays reserved for the FAB).
+    public static let accentSun = dynamic(light: 0xFBE4AA, dark: 0x5F4B1F)
     public static let focusRing = dynamic(light: 0x755B21, dark: 0xF6D780)
     /// Near-black ink for outlines/icons on the yellow accent (both themes).
     public static let ink = dynamic(light: 0x1F1D1A, dark: 0x1F1D1A)

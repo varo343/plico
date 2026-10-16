@@ -26,6 +26,7 @@ struct NotesListView: View {
                 EmptyState(symbol: "magnifyingglass", tint: SNColor.borderSubtle, title: "No matches",
                            message: "Nothing in your notes contains “\(model.searchQuery)”. Trash isn't searched.") {
                     Button("Clear Search") { model.searchQuery = "" }
+                        .buttonStyle(SNCapsuleButtonStyle())
                 }
             } else {
                 list
@@ -79,7 +80,7 @@ struct NotesListView: View {
                 Button { model.searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(SNColor.textSecondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SNIconButtonStyle(shape: .capsule, size: CGSize(width: 20, height: 20)))
                 .accessibilityLabel("Clear search")
             }
         }
@@ -93,19 +94,15 @@ struct NotesListView: View {
     }
 
     private var sortMenu: some View {
-        Menu {
-            Picker("Sort By", selection: $model.sortMode) {
-                ForEach(NoteSortMode.allCases, id: \.self) { Text($0.label).tag($0) }
+        SNDropdown(minWidth: 190, showsChevron: false) {
+            [.header("Sort by")] + NoteSortMode.allCases.map { mode in
+                .item(SNMenuItem(title: mode.label, icon: mode.symbol, isChecked: model.sortMode == mode) { model.sortMode = mode })
             }
-            .pickerStyle(.inline)
         } label: {
-            Image(systemName: "arrow.up.arrow.down")
-                .font(.system(size: 12, weight: .semibold))
+            Image(systemName: "arrow.up.arrow.down").font(.system(size: 12, weight: .semibold))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Sort notes (\(model.sortMode.label))")
+        .foregroundStyle(SNColor.textPrimary)
+        .hoverLabel("Sort: \(model.sortMode.label)")
         .accessibilityLabel("Sort notes, currently \(model.sortMode.label)")
     }
 
@@ -123,8 +120,8 @@ struct NotesListView: View {
                     rows(model.groups.others)
                 }
                 .padding(.horizontal, SNSpacing.xs)
+                .padding(.bottom, SNSpacing.l)
             }
-            .contentMargins(.bottom, 88, for: .scrollContent) // FAB clearance in narrow layouts
             .focusable()
             .focused($listFocused)
             .focusEffectDisabled()
@@ -276,9 +273,9 @@ struct NoteListRow: View {
                     Text(note.updatedAt, format: .relative(presentation: .named))
                         .font(.system(size: 11))
                         .foregroundStyle(SNColor.textSecondary)
-                    if let priority = CompactMetaLabel.priority(note.priority) { priority }
-                    if let due = note.dueDate { CompactMetaLabel.due(due, today: today) }
-                    if let planned = note.plannedDate { CompactMetaLabel.planned(planned, today: today) }
+                    PriorityBadge(note.priority, size: .small)
+                    if let due = note.dueDate { DateMetadataChip(.due, day: due, today: today, size: .small) }
+                    if let planned = note.plannedDate { DateMetadataChip(.planned, day: planned, today: today, size: .small) }
                 }
                 .padding(.top, 2)
             }

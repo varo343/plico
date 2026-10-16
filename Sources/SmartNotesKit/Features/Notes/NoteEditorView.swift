@@ -50,9 +50,10 @@ struct NoteEditorView: View {
                         }
                     }
 
-                    // Clicking below the last block continues writing there.
+                    // Clicking below the last block continues writing there. Its height
+                    // also lets the last line scroll clear of the New Note button.
                     Color.clear
-                        .frame(maxWidth: .infinity, minHeight: 160)
+                        .frame(maxWidth: .infinity, minHeight: 200)
                         .contentShape(Rectangle())
                         .onTapGesture { model.focusLastBlockEnd() }
                         .accessibilityHidden(true)
@@ -62,8 +63,6 @@ struct NoteEditorView: View {
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
-            // Keeps the floating New Note button clear of the last lines.
-            .contentMargins(.bottom, 96, for: .scrollContent)
         }
         .background(SNColor.canvas)
         // Floating formatting bar: shown on selection or via the toolbar toggle.
@@ -78,6 +77,7 @@ struct NoteEditorView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: model.hasTextSelection || model.showsFormattingBar)
+        .modifier(SlashMenuPresenter(model: model))
         .sheet(isPresented: Binding(get: { model.linkDraft != nil }, set: { if !$0 { model.cancelLinkEditing() } })) {
             LinkEditorSheet(model: model)
         }
@@ -191,7 +191,13 @@ private struct BlockRow: View {
             onUndo: { [model] in model.undo() },
             onRedo: { [model] in model.redo() },
             canUndo: { [model] in model.canUndo },
-            canRedo: { [model] in model.canRedo }
+            canRedo: { [model] in model.canRedo },
+            onSlashToken: { [model] in model.updateSlashToken($0, blockID: id, anchor: $1) },
+            onSlashCompleted: { [model] in model.applyCompletedSlashCommand($0, blockID: id, removing: $1) },
+            isSlashMenuOpen: { [model] in model.slashMenu?.blockID == id },
+            onSlashMove: { [model] in model.moveSlashHighlight(by: $0) },
+            onSlashConfirm: { [model] in model.applySlashCommand() },
+            onSlashDismiss: { [model] in model.dismissSlashMenu() }
         )
     }
 
@@ -213,7 +219,7 @@ private struct BlockRow: View {
                         .font(.system(size: style.baseSize))
                         .foregroundStyle(block.isChecked ? SNColor.focusRing : SNColor.textSecondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SNIconButtonStyle(shape: .rounded(5), size: CGSize(width: 22, height: 22)))
                 .accessibilityLabel("Checklist item")
                 .accessibilityValue(block.isChecked ? "Checked" : "Unchecked")
             case .quote:
@@ -289,8 +295,10 @@ private struct SaveErrorBanner: View {
             }
             Spacer()
             Button("Copy as Text", action: copy)
+                .buttonStyle(SNCapsuleButtonStyle())
                 .help("Copy this note as Markdown so nothing is lost")
             Button("Retry", action: retry)
+                .buttonStyle(SNCapsuleButtonStyle())
                 .keyboardShortcut(.defaultAction)
         }
         .foregroundStyle(SNColor.textPrimary)

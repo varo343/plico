@@ -57,33 +57,37 @@ extension FontFamilyPreset {
 }
 
 /// Floating formatting pill. Appears while text is selected or when toggled
-/// from the window toolbar. Essential formatting also has keyboard shortcuts.
+/// with "Aa". Highlights inside are capsules, concentric with the pill.
 struct NoteEditorToolbar: View {
     let model: NoteEditorModel
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 1) {
             blockTypeMenu
+            blockButton(.checklistItem, symbol: "checklist", label: "Checklist", shortcut: "⇧⌘L")
+            blockButton(.bulletItem, symbol: "list.bullet", label: "Bulleted list", shortcut: "⇧⌘7")
+            blockButton(.numberedItem, symbol: "list.number", label: "Numbered list", shortcut: "⇧⌘8")
             divider
             markButton(.bold, symbol: "bold", label: "Bold", shortcut: "⌘B")
             markButton(.italic, symbol: "italic", label: "Italic", shortcut: "⌘I")
             markButton(.underline, symbol: "underline", label: "Underline", shortcut: "⌘U")
             markButton(.strikethrough, symbol: "strikethrough", label: "Strikethrough", shortcut: "⇧⌘X")
-            markButton(.code, symbol: "chevron.left.forwardslash.chevron.right", label: "Inline Code", shortcut: nil)
+            markButton(.code, symbol: "chevron.left.forwardslash.chevron.right", label: "Inline code", shortcut: nil)
             Button { EditorActions.editLink() } label: { icon("link") }
-                .help("Link (⌘K)")
+                .buttonStyle(SNIconButtonStyle(shape: .capsule))
+                .hoverLabel("Link  ⌘K", edge: .top)
                 .accessibilityLabel("Link")
             divider
             fontMenu
             sizeMenu
         }
-        .buttonStyle(.plain)
         .foregroundStyle(SNColor.textPrimary)
-        .padding(.horizontal, SNSpacing.xs)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 4)
         .background(SNColor.card, in: Capsule())
-        .overlay(Capsule().stroke(SNColor.outline.opacity(0.8), lineWidth: 1.5))
-        .shadow(color: .black.opacity(0.14), radius: 10, y: 4)
+        .overlay(Capsule().stroke(SNColor.outline.opacity(0.85), lineWidth: 1.5))
+        .background(Capsule().fill(SNColor.outline.opacity(0.85)).offset(x: 2, y: 3))
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Formatting")
     }
@@ -93,68 +97,100 @@ struct NoteEditorToolbar: View {
     }
 
     private func icon(_ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 12.5, weight: .semibold))
-            .frame(width: 28, height: 26)
-            .contentShape(Rectangle())
+        Image(systemName: symbol).font(.system(size: 12.5, weight: .semibold))
     }
 
     private func markButton(_ mark: InlineMark, symbol: String, label: String, shortcut: String?) -> some View {
         let isOn = model.selectionMarks.contains(mark) && model.hasTextSelection
-        return Button { EditorActions.toggle(mark) } label: {
-            icon(symbol)
-                .background(isOn ? SNColor.borderSubtle : .clear, in: RoundedRectangle(cornerRadius: 7))
-        }
-        .help(shortcut.map { "\(label) (\($0))" } ?? label)
-        .accessibilityLabel(label)
-        .accessibilityValue(isOn ? "On" : "Off")
+        return Button { EditorActions.toggle(mark) } label: { icon(symbol) }
+            .buttonStyle(SNIconButtonStyle(isActive: isOn, shape: .capsule))
+            .hoverLabel(shortcut.map { "\(label)  \($0)" } ?? label, edge: .top)
+            .accessibilityLabel(label)
+            .accessibilityValue(isOn ? "On" : "Off")
+    }
+
+    /// One-click block kinds; clicking the active kind turns the block back into text.
+    private func blockButton(_ type: BlockType, symbol: String, label: String, shortcut: String) -> some View {
+        let isOn = model.activeBlock?.type == type
+        return Button { model.setBlockType(isOn ? .paragraph : type) } label: { icon(symbol) }
+            .buttonStyle(SNIconButtonStyle(isActive: isOn, shape: .capsule))
+            .hoverLabel("\(label)  \(shortcut)  ·  /\(type.slashName)", edge: .top)
+            .accessibilityLabel(label)
+            .accessibilityValue(isOn ? "On" : "Off")
     }
 
     private var blockTypeMenu: some View {
-        Menu {
-            ForEach(BlockType.allCases, id: \.self) { type in
-                Button(type.menuTitle) { model.setBlockType(type) }
+        SNDropdown(minWidth: 210, shape: .capsule) {
+            [.header("Turn into")] + BlockType.allCases.map { type in
+                .item(SNMenuItem(title: type.menuTitle, icon: type.symbol, isChecked: model.activeBlock?.type == type,
+                                 shortcut: "/" + type.slashName) { model.setBlockType(type) })
             }
         } label: {
             Text(model.activeBlock?.type.menuTitle ?? "Body").font(.system(size: 12, weight: .semibold))
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .padding(.horizontal, 6)
-        .help("Block type")
+        .hoverLabel("Block type", edge: .top)
         .accessibilityLabel("Block type")
     }
 
     private var fontMenu: some View {
-        Menu {
-            Button("Default") { model.setFontFamily(nil) }
-            ForEach(FontFamilyPreset.allCases, id: \.self) { family in
-                Button(family.menuTitle) { model.setFontFamily(family) }
-            }
+        SNDropdown(minWidth: 180, shape: .capsule) {
+            let current = model.selectionFontFamily
+            return [.header("Font")]
+                + [.item(SNMenuItem(title: "Default", icon: "textformat", isChecked: current == nil) { model.setFontFamily(nil) })]
+                + FontFamilyPreset.allCases.map { family in
+                    .item(SNMenuItem(title: family.menuTitle, icon: family.symbol, isChecked: current == family) { model.setFontFamily(family) })
+                }
         } label: {
             Text("Font").font(.system(size: 12, weight: .medium))
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .padding(.horizontal, 4)
-        .help("Font (applies to selection, or the whole block)")
+        .hoverLabel("Font · selection or whole block", edge: .top)
         .accessibilityLabel("Font")
     }
 
     private var sizeMenu: some View {
-        Menu {
-            Button("Default") { model.setFontSize(nil) }
-            ForEach(FontSizePreset.allCases, id: \.self) { size in
-                Button("\(size.rawValue) pt") { model.setFontSize(size) }
-            }
+        SNDropdown(minWidth: 150, shape: .capsule) {
+            let current = model.selectionFontSize
+            return [.header("Size")]
+                + [.item(SNMenuItem(title: "Default", isChecked: current == nil) { model.setFontSize(nil) })]
+                + FontSizePreset.allCases.map { size in
+                    .item(SNMenuItem(title: "\(size.rawValue) pt", isChecked: current == size) { model.setFontSize(size) })
+                }
         } label: {
             Text("Size").font(.system(size: 12, weight: .medium))
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .padding(.horizontal, 4)
-        .help("Text size (applies to selection, or the whole block)")
+        .hoverLabel("Text size · selection or whole block", edge: .top)
         .accessibilityLabel("Text size")
+    }
+}
+
+extension BlockType {
+    var symbol: String {
+        switch self {
+        case .paragraph: "text.alignleft"
+        case .heading1: "textformat.size.larger"
+        case .heading2: "textformat.size"
+        case .heading3: "textformat.size.smaller"
+        case .bulletItem: "list.bullet"
+        case .numberedItem: "list.number"
+        case .checklistItem: "checklist"
+        case .quote: "text.quote"
+        }
+    }
+
+    /// The slash command that turns a block into this kind.
+    var slashName: String {
+        SlashCommand.all.first { $0.type == self }?.name ?? rawValue
+    }
+}
+
+extension FontFamilyPreset {
+    var symbol: String {
+        switch self {
+        case .system: "character"
+        case .serif: "character.book.closed"
+        case .rounded: "circle.dashed"
+        case .monospaced: "chevron.left.forwardslash.chevron.right"
+        }
     }
 }
 

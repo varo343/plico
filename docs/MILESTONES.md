@@ -149,6 +149,28 @@ Outlook items already exist (M0) and are tested; sign-in, Graph fetch and the Me
 - [ ] Resize the window from wide to 820 pt and back: sidebar hides and returns
 - [ ] VoiceOver pass over list rows, editor metadata row, formatting pill
 
+## Design iteration 2 (your feedback, Oct 17) ✅ automated · 🟡 manual checks pending
+- ✅ Sidebar removed. Above "Notes" there is an icon-only section switcher (Notes, Today, Mentions, Trash)
+  plus Settings. Labels and shortcuts appear on hover (⌘1–⌘4, ⌘,).
+- ✅ Hover states on every control: shared icon and capsule button styles, hover labels, Today cards,
+  Trash actions, checkboxes, banners, metadata row
+- ✅ Product dropdowns replace system menus (sort, note actions, priority, block type, font, size) and the
+  date popovers. A floating panel with ink outline and cartoon shadow, keyboard-navigable (↑/↓, ↩, esc).
+  **Concentric radii:** panel 14 − padding 5 = items 9; switcher 12 − 3 = 9; capsule highlights inside
+  the capsule formatting bar. Context menus and the Settings window stay native (per spec).
+- ✅ Badges unified (`SNBadge`): tinted capsule + ink outline + small hard "sticker" shadow, opaque colors
+  in both themes (new `accentSun` token); same component in list, editor and Today
+- ✅ Slash commands: "/" at the start of a block or after a space opens a filterable menu
+  (/text /h1 /h2 /h3 /checkbox /bullet /numbered /quote, with aliases such as /todo, /list, /elenco).
+  ↑/↓ + ↩ or Tab to apply, esc to close; typing "/checkbox " (with a space) applies directly.
+  URLs and "1/2" never trigger it. One undo step.
+- ✅ Formatting bar gained one-click Checklist / Bulleted / Numbered buttons
+- ✅ Fixed: lists and editor showed an empty band at the bottom (scroll insets); content now reaches the edge
+- ✅ 183 tests (2 consecutive runs), including 6 hosted tests that type slash commands
+
+**Manual checks pending:** open each dropdown with mouse and keyboard; type "/" in a note and pick with
+↑/↓/↩; hover every icon in the switcher; check the date calendar panel.
+
 ## Spec acceptance items already covered by M0 tests
 - Formatting persists across relaunch (on-disk container reopen test)
 - Duplicate: new IDs, original unaffected

@@ -15,6 +15,7 @@ struct TodayView: View {
                 EmptyState(symbol: "sun.max", title: "Nothing scheduled for today",
                            message: "Notes appear here when you give them a planned or due date.") {
                     Button("Go to Notes", action: showNotes)
+                        .buttonStyle(SNCapsuleButtonStyle())
                 }
             } else {
                 ScrollView {
@@ -30,8 +31,8 @@ struct TodayView: View {
                         }
                     }
                     .padding(SNSpacing.m)
+                    .padding(.bottom, SNSpacing.l)
                 }
-                .contentMargins(.bottom, 88, for: .scrollContent) // FAB clearance
             }
         }
         .background(SNColor.card)
@@ -90,6 +91,7 @@ private struct TodayCard: View {
     let showsCompleted: Bool
     let isSelected: Bool
     let open: () -> Void
+    @State private var isHovered = false
 
     private static let maxLines = 4
 
@@ -109,11 +111,16 @@ private struct TodayCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(SNSpacing.s)
-            .background(isSelected ? SNColor.borderSubtle.opacity(0.6) : SNColor.canvas, in: RoundedRectangle(cornerRadius: SNRadius.standard))
-            .overlay(RoundedRectangle(cornerRadius: SNRadius.standard).stroke(SNColor.borderSubtle))
+            .background(SNColor.canvas, in: RoundedRectangle(cornerRadius: SNRadius.standard))
+            .overlay(
+                RoundedRectangle(cornerRadius: SNRadius.standard)
+                    .stroke(isSelected || isHovered ? SNColor.outline.opacity(0.8) : SNColor.borderSubtle,
+                            lineWidth: isSelected ? 1.5 : 1)
+            )
             .contentShape(RoundedRectangle(cornerRadius: SNRadius.standard))
         }
         .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens the note")
         .accessibilityAddTraits(isSelected ? .isSelected : [])

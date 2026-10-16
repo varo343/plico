@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The four primary destinations. No Archive; Settings is not a destination.
+/// The four primary destinations (switched from the list column header).
+/// No Archive; Settings is not a destination.
 public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable {
     case notes, today, mentions, trash
 
@@ -33,39 +34,26 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable {
 /// Three-column layout: sidebar · list · editor.
 public struct RootView: View {
     @Bindable private var app: AppModel
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    /// True when the sidebar was hidden automatically for a narrow window,
-    /// so it is restored when the window widens (a manual choice is respected).
-    @State private var sidebarAutoCollapsed = false
-    private static let collapseWidth: CGFloat = 880
 
     public init(app: AppModel) {
         self.app = app
     }
 
     public var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 190, ideal: 215, max: 240)
-        } content: {
-            content
-                .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 360)
+        NavigationSplitView {
+            VStack(spacing: 0) {
+                SectionSwitcher(selection: $app.destination)
+                    .padding(.horizontal, SNSpacing.m)
+                    .padding(.top, SNSpacing.xxs)
+                    .padding(.bottom, SNSpacing.s)
+                    .zIndex(1) // hover labels draw above the column content
+                content
+            }
+            .background(SNColor.card)
+            .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 380)
         } detail: {
             detail
-                .frame(minWidth: 380)
-        }
-        // Narrow windows drop to list + editor instead of squeezing the editor.
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-            if width < Self.collapseWidth, columnVisibility == .all {
-                columnVisibility = .doubleColumn
-                sidebarAutoCollapsed = true
-            } else if width >= Self.collapseWidth, sidebarAutoCollapsed {
-                columnVisibility = .all
-                sidebarAutoCollapsed = false
-            }
-        }
-        .onChange(of: columnVisibility) { _, visibility in
-            if visibility == .all { sidebarAutoCollapsed = false }
+                .frame(minWidth: 420)
         }
         .overlay(alignment: .bottomTrailing) {
             if app.destination.allowsCreation {
@@ -80,7 +68,7 @@ public struct RootView: View {
                     .id(trashed.id)
             }
         }
-        .frame(minWidth: 820, minHeight: 520)
+        .frame(minWidth: 760, minHeight: 520)
         .navigationTitle("")
         // Let each column's warm surface run up under the title bar.
         .toolbarBackground(.hidden, for: .windowToolbar)
@@ -93,40 +81,6 @@ public struct RootView: View {
         } message: {
             Text(app.notes.errorMessage ?? "")
         }
-    }
-
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: SNSpacing.xs) {
-                AppMark()
-                Text("Smart Notes").font(.system(size: 15, weight: .bold)).foregroundStyle(SNColor.textPrimary)
-            }
-            .padding(.horizontal, SNSpacing.s)
-            .padding(.bottom, SNSpacing.m)
-            .accessibilityElement(children: .combine)
-            ForEach(SidebarDestination.allCases) { destination in
-                SidebarDestinationRow(
-                    title: destination.title,
-                    symbol: destination.symbol,
-                    isSelected: app.destination == destination
-                ) {
-                    app.destination = destination
-                }
-            }
-            Spacer()
-            SettingsLink {
-                Label("Settings", systemImage: "gearshape")
-                    .font(.system(size: 13))
-                    .foregroundStyle(SNColor.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, SNSpacing.s)
-            .padding(.bottom, SNSpacing.s)
-        }
-        .padding(.horizontal, SNSpacing.xs)
-        .padding(.top, SNSpacing.xs)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(SNColor.sidebar)
     }
 
     @ViewBuilder
@@ -179,9 +133,11 @@ private struct UndoTrashBanner: View {
     var body: some View {
         HStack(spacing: SNSpacing.s) {
             Text("Moved “\(title)” to Trash").lineLimit(1)
-            Button("Undo", action: undo).keyboardShortcut("z", modifiers: [.command, .option])
-            Button { dismiss() } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
+            Button("Undo", action: undo)
+                .keyboardShortcut("z", modifiers: [.command, .option])
+                .buttonStyle(SNCapsuleButtonStyle())
+            Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
+                .buttonStyle(SNIconButtonStyle(shape: .capsule, size: CGSize(width: 22, height: 22)))
                 .accessibilityLabel("Dismiss")
         }
         .font(.system(size: 13))

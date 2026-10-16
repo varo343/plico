@@ -86,6 +86,8 @@ final class EditorHarness {
         await send(shift ? "\u{19}" : "\t", keyCode: 48, modifiers: shift ? .shift : [])
     }
 
+    func pressEscape() async { await send("\u{1b}", keyCode: 53) }
+
     func pressReturn(shift: Bool = false) async { await send("\r", keyCode: 36, modifiers: shift ? .shift : []) }
     func pressBackspace() async { await send("\u{7f}", keyCode: 51) }
     func pressUp() async { await send(String(UnicodeScalar(NSUpArrowFunctionKey)!), keyCode: 126, modifiers: [.function, .numericPad]) }
@@ -346,3 +348,75 @@ final class EditorHarness {
         }
     }
 }
+
+@MainActor
+@Suite(.serialized) struct SlashCommandHostingTests {
+    @Test func typingSlashFiltersAndReturnApplies() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, .empty)])
+        h.click(block: 0, at: 0)
+        await h.type("/")
+        #expect(h.editor.slashMenu?.commands.count == SlashCommand.all.count)
+        await h.type("che")
+        #expect(h.editor.slashMenu?.commands.map(\.name) == ["checkbox"])
+        await h.pressReturn()
+        #expect(h.editor.slashMenu == nil)
+        #expect(h.editor.note.blocks.map(\.type) == [.checklistItem])
+        #expect(h.plainBlocks == [""])           // the typed "/che" is removed
+        await h.type("Milk")
+        #expect(h.plainBlocks == ["Milk"])       // caret stays in the block
+    }
+
+    @Test func fullCommandWithSpaceAppliesWithoutMenu() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, .empty)])
+        h.click(block: 0, at: 0)
+        await h.type("/bullet ")
+        #expect(h.editor.note.blocks[0].type == .bulletItem)
+        #expect(h.plainBlocks == [""])
+        await h.type("Eggs")
+        #expect(h.plainBlocks == ["Eggs"])
+    }
+
+    @Test func arrowsMoveHighlightInsteadOfCaret() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "above")), (.paragraph, .empty)])
+        h.click(block: 1, at: 0)
+        await h.type("/h")
+        #expect(h.editor.slashMenu?.commands.map(\.name).prefix(3) == ["h1", "h2", "h3"])
+        await h.pressDown()
+        #expect(h.editor.slashMenu?.highlighted == 1)
+        #expect(h.focused === h.textViews[1])    // didn't jump to the block above/below
+        await h.pressReturn()
+        #expect(h.editor.note.blocks[1].type == .heading2)
+    }
+
+    @Test func escapeClosesMenuAndKeepsText() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, .empty)])
+        h.click(block: 0, at: 0)
+        await h.type("/che")
+        await h.pressEscape()
+        #expect(h.editor.slashMenu == nil)
+        #expect(h.plainBlocks == ["/che"])
+        await h.type("x")                        // stays dismissed for this "/"
+        #expect(h.editor.slashMenu == nil)
+        #expect(h.editor.note.blocks[0].type == .paragraph)
+    }
+
+    @Test func urlsAndMidWordSlashesDoNotOpenTheMenu() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, .empty)])
+        h.click(block: 0, at: 0)
+        await h.type("https://apple.com and 1/2")
+        #expect(h.editor.slashMenu == nil)
+        #expect(h.plainBlocks == ["https://apple.com and 1/2"])
+    }
+
+    @Test func slashCommandIsOneUndoStep() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "Task"))])
+        h.click(block: 0, at: 4)
+        await h.type(" /checkbox ")
+        #expect(h.editor.note.blocks[0].type == .checklistItem)
+        #expect(h.plainBlocks == ["Task "])
+        h.focused?.undo(nil); await h.pump()
+        #expect(h.editor.note.blocks[0].type == .paragraph)
+        #expect(h.plainBlocks == ["Task /checkbox "])
+    }
+}
+

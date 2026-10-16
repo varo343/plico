@@ -58,6 +58,8 @@ project generator, and adding one (xcodegen/tuist) would be an extra dependency.
 ## Architecture notes
 - **Data flow:** View → model (`NotesModel` / `NoteEditorModel`) → repository protocol → SwiftData. Views never touch SwiftData directly.
 - **Editor:** one TextKit 1 `NSTextView` per block. Inline marks live in custom attributes inside the text view and convert losslessly to and from `RichText`. Structural edits (Enter, Backspace) are pure functions in `BlockEditing`.
+- **Slash commands:** `SlashTrigger` and `SlashCommand` (domain) detect "/query" at the caret. The model holds the menu state, and the text view routes ↑/↓/↩/esc to it while the menu is open.
+- **Floating UI:** dropdowns, date panels and the slash menu are child `NSPanel`s (`FloatingPanelController`), so they are never clipped by columns.
 - **Undo:** one note-level history in `NoteEditorModel` (`EditHistory`). The block text views have their own undo turned off and forward ⌘Z to the model.
 - **Paste:** `PasteConverter` maps RTF/HTML to supported marks and blocks. HTML first goes through `HTMLSanitizer`, an allowlist, so importing it can't load remote resources.
 - **Saving:** autosave writes only title and blocks (`updateContent`). Pin, rank and dates go through `updateMetadata`, so neither can overwrite the other.
