@@ -8,24 +8,33 @@ struct TrashView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Trash").font(SNFont.section).foregroundStyle(SNColor.textPrimary)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Trash").font(.system(size: 22, weight: .bold)).foregroundStyle(SNColor.textPrimary)
+                Text("\(model.trashed.count)")
+                    .font(.system(size: 13, weight: .medium).monospacedDigit())
+                    .foregroundStyle(SNColor.textSecondary)
                 Spacer()
-                Button("Empty Trash") { confirmEmpty = true }
+                Button("Empty Trash…") { confirmEmpty = true }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(model.trashed.isEmpty ? SNColor.textSecondary : SNColor.textPrimary)
                     .disabled(model.trashed.isEmpty)
             }
             .padding(.horizontal, SNSpacing.m)
-            .padding(.vertical, SNSpacing.s)
+            .padding(.top, SNSpacing.xs)
+            .padding(.bottom, SNSpacing.s)
 
             if model.trashed.isEmpty {
-                EmptyState(symbol: "trash", title: "Trash is empty",
-                           message: "Deleted notes stay here until you empty the Trash.")
+                EmptyState(symbol: "trash", tint: SNColor.borderSubtle, title: "Trash is empty",
+                           message: "Deleted notes wait here until you empty the Trash. Nothing is removed automatically.")
             } else {
-                List(model.trashed) { note in
-                    TrashRow(note: note, restore: { model.restore(note.id) }, delete: { pendingDelete = note })
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(model.trashed) { note in
+                            TrashRow(note: note, restore: { model.restore(note.id) }, delete: { pendingDelete = note })
+                        }
+                    }
+                    .padding(.horizontal, SNSpacing.xs)
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
             }
         }
         .background(SNColor.card)
@@ -53,26 +62,48 @@ private struct TrashRow: View {
     let note: NoteSummary
     let restore: () -> Void
     let delete: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: SNSpacing.s) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(note.displayTitle).font(SNFont.rowTitle).foregroundStyle(SNColor.textPrimary).lineLimit(1)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(note.displayTitle)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(SNColor.textPrimary)
+                .lineLimit(2)
+            HStack(spacing: SNSpacing.xs) {
                 if let deletedAt = note.deletedAt {
                     Text("Deleted \(deletedAt.formatted(.relative(presentation: .named)))")
-                        .font(SNFont.secondary)
+                        .font(.system(size: 11))
                         .foregroundStyle(SNColor.textSecondary)
                 }
+                Spacer()
+                Button(action: restore) {
+                    Label("Restore", systemImage: "arrow.uturn.backward")
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(SNColor.canvas, in: Capsule())
+                        .overlay(Capsule().stroke(SNColor.borderSubtle))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(SNColor.textPrimary)
+                Button(action: delete) {
+                    Image(systemName: "xmark.bin")
+                        .font(.system(size: 12))
+                        .frame(width: 26, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(SNColor.textSecondary)
+                .help("Delete permanently…")
+                .accessibilityLabel("Delete \(note.displayTitle) permanently")
             }
-            Spacer()
-            Button("Restore", action: restore)
-            Button(role: .destructive, action: delete) {
-                Image(systemName: "trash.slash")
-            }
-            .help("Delete permanently")
-            .accessibilityLabel("Delete \(note.displayTitle) permanently")
         }
-        .padding(.vertical, SNSpacing.xxs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SNSpacing.s)
+        .padding(.vertical, 10)
+        .background(isHovered ? SNColor.borderSubtle.opacity(0.35) : .clear, in: RoundedRectangle(cornerRadius: SNRadius.standard))
+        .onHover { isHovered = $0 }
+        .accessibilityElement(children: .contain)
         .contextMenu {
             Button("Restore", action: restore)
             Button("Delete Permanently…", role: .destructive, action: delete)

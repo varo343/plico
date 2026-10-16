@@ -105,6 +105,17 @@ public final class SwiftDataNoteRepository: NoteRepository {
         return trashed.count
     }
 
+    public func allNotes() throws -> [Note] {
+        let records = try context.fetch(FetchDescriptor<NoteRecord>(sortBy: [SortDescriptor(\.createdAt)]))
+        return try records.map(Self.note)
+    }
+
+    public func deleteAll() throws {
+        // Deleted one by one so the cascade removes each note's blocks.
+        try context.fetch(FetchDescriptor<NoteRecord>()).forEach(context.delete)
+        try context.save()
+    }
+
     // MARK: - Private
 
     private func record(id: UUID) throws -> NoteRecord? {

@@ -15,6 +15,8 @@ public enum SNColor {
     public static let focusRing = dynamic(light: 0x755B21, dark: 0xF6D780)
     /// Near-black ink for outlines/icons on the yellow accent (both themes).
     public static let ink = dynamic(light: 0x1F1D1A, dark: 0x1F1D1A)
+    /// Cartoon outline on neutral surfaces: ink in light mode, warm off-white in dark.
+    public static let outline = dynamic(light: 0x1F1D1A, dark: 0xE9E2D6)
 
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in

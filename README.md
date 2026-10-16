@@ -4,7 +4,7 @@ A native, local-first macOS note-taking app (SwiftUI + SwiftData). Specs:
 `Smart_Notes_Technical_Spec.md` (architecture, data, security) and
 `Smart_Notes_UX_UI_Design_Spec.md` (layout, visuals, interactions).
 
-**Status:** Milestones 0–3 complete (notes, block editor, priority/dates/Today; some interactions still need manual checks). See [`docs/MILESTONES.md`](docs/MILESTONES.md).
+**Status:** Milestones 0–3 and 5 complete. Outlook (M4) is skipped for now. Some interactions still need manual checks; see docs/MILESTONES.md. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 ## Requirements
 - macOS 14 Sonoma or later (developed on macOS 27 / Xcode 27 / Swift 6.4)
@@ -37,7 +37,8 @@ Sources/
     App/                    composition root (AppDependencies), root navigation
     Features/Notes/         list, Trash, editor (NotesModel, NoteEditorModel, per-block NSTextView)
     Features/Today/         TodayModel, TodayView (Overdue / Due today / Planned today)
-    Features/…              Outlook / Settings (later milestones)
+    Features/Settings/      SettingsModel, SettingsView, DataExporter
+    Features/Outlook/       (not built; M4 skipped)
     Domain/Models/          Note, NoteBlock, RichText, LocalDay, ExternalItem, settings
     Domain/Services/        Rank, NoteText, NoteSorter/ManualOrdering, BlockEditing, EditHistory,
                             TodayRules, LinkValidator
@@ -69,8 +70,12 @@ project generator, and adding one (xcodegen/tuist) would be an extra dependency.
 - **Settings** are a JSON blob in UserDefaults. Unknown values fall back field by field.
 - **Logging** uses `os.Logger`. Note contents, email data and tokens are never logged.
 
+## Backup and data
+- **Export:** File ▸ Export All Notes… (⇧⌘E), or Settings ▸ Data. It writes `notes.json` (a complete backup) and Markdown files.
+- **Delete everything:** Settings ▸ Data ▸ Delete All…, after a confirmation.
+
 ## Outlook / Microsoft sign-in
-Not implemented yet (Milestone 4). Until a Microsoft Entra app registration exists,
+Not implemented (Milestone 4 skipped for now). Until a Microsoft Entra app registration exists,
 Mentions will run on mock fixtures. Tokens will live in the Keychain only.
 Never put credentials or tokens in source files.
 

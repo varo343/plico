@@ -295,11 +295,17 @@ final class BlockNSTextView: NSTextView {
 
     // MARK: Layout & focus
 
+    /// Height needed at `width`. Measured on a scratch copy: SwiftUI asks for
+    /// several candidate widths, and resizing the live container for each one
+    /// could leave it laid out for the wrong width (blocks overlapping).
     func height(forWidth width: CGFloat, minimumLineHeight: CGFloat) -> CGFloat {
-        guard let layout = layoutManager, let container = textContainer else { return minimumLineHeight }
-        if container.size.width != width {
-            container.size = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-        }
+        guard let text = textStorage, text.length > 0, width > 0 else { return minimumLineHeight }
+        let storage = NSTextStorage(attributedString: text)
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        layout.addTextContainer(container)
+        storage.addLayoutManager(layout)
         layout.ensureLayout(for: container)
         return max(ceil(layout.usedRect(for: container).height), minimumLineHeight)
     }

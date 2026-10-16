@@ -37,6 +37,12 @@ public protocol NoteRepository: AnyObject {
     /// Permanently deletes every trashed note. Returns how many were removed.
     @discardableResult
     func emptyTrash() throws -> Int
+
+    /// Every note including Trash, with blocks (for export).
+    func allNotes() throws -> [Note]
+
+    /// Permanently deletes every note, including Trash.
+    func deleteAll() throws
 }
 
 /// Note fields that can change independently of the note's content.

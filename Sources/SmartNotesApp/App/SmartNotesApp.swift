@@ -18,11 +18,17 @@ struct SmartNotesApp: App {
                 StartupFailureView(message: error.localizedDescription) { launch.retry() }
             }
         }
+        .defaultSize(width: 1240, height: 800)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands { AppCommands(app: try? launch.result.get()) }
 
         Settings {
-            EmptyState(symbol: "gearshape", title: "Settings", message: "Settings arrive in a later milestone.")
-                .frame(width: 420, height: 260)
+            if case .success(let app) = launch.result {
+                SettingsView(app: app)
+            } else {
+                Text("Settings are unavailable because the notes database couldn't be opened.")
+                    .padding()
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import SmartNotesKit
 
@@ -96,5 +97,50 @@ import Testing
         // Yesterday's "due today" note is now overdue.
         let overdue = titles(today.sections(from: notes.activeNotes))[.overdue] ?? []
         #expect(overdue.contains("Café ideas for the team offsite"))
+    }
+}
+
+@MainActor
+@Suite struct DataManagementTests {
+    private let now = Date(timeIntervalSince1970: 1_790_000_000)
+
+    @Test func exportWritesJsonAndMarkdownIncludingTrash() throws {
+        let deps = try AppDependencies.inMemory(seedSampleData: true, now: now)
+        let trashedID = try #require(try deps.notes.summaries(in: .active).first).id
+        try deps.notes.moveToTrash(id: trashedID, at: now)
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent("SNExport-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+
+        let result = try DataExporter.export(try deps.notes.allNotes(), into: parent, now: now)
+        #expect(result.noteCount == 5)
+        let markdown = try FileManager.default.contentsOfDirectory(atPath: result.folder.appendingPathComponent("Markdown").path)
+        #expect(markdown.filter { $0.hasSuffix(".md") }.count == 4)
+        let trash = try FileManager.default.contentsOfDirectory(atPath: result.folder.appendingPathComponent("Markdown/Trash").path)
+        #expect(trash.count == 1)
+        let json = try Data(contentsOf: result.folder.appendingPathComponent("notes.json"))
+        #expect(String(decoding: json, as: UTF8.self).contains("\"format\" : \"smart-notes-export\""))
+
+        // A second export never overwrites the first.
+        let second = try DataExporter.export(try deps.notes.allNotes(), into: parent, now: now)
+        #expect(second.folder != result.folder)
+    }
+
+    @Test func deleteAllDataRemovesEverything() throws {
+        let deps = try AppDependencies.inMemory(seedSampleData: true, now: now)
+        try deps.notes.moveToTrash(id: try #require(try deps.notes.summaries(in: .active).first).id, at: now)
+        try deps.externalItems.upsert([ExternalItemDraft(
+            key: ExternalItemKey(provider: .outlook, accountId: "a", externalId: "1"),
+            subject: "s", preview: "p", receivedAt: now, importRule: "flagged")], syncedAt: now)
+        var settings = deps.settings.load()
+        settings.sortMode = .title
+        deps.settings.save(settings)
+
+        try deps.deleteAllData()
+        #expect(try deps.notes.allNotes().isEmpty)
+        #expect(try deps.externalItems.items(provider: .outlook, accountId: "a", includeDismissed: true).isEmpty)
+        #expect(deps.settings.load() == .defaults)
+        let orphanBlocks = try deps.modelContainer.mainContext.fetchCount(FetchDescriptor<BlockRecord>())
+        #expect(orphanBlocks == 0)
     }
 }

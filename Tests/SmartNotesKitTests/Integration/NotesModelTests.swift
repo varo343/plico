@@ -289,3 +289,37 @@ private extension FocusRequest {
         return copy
     }
 }
+
+@MainActor
+@Suite struct NotesListNavigationTests {
+    private let start = Date(timeIntervalSince1970: 1_790_000_000)
+
+    private func makeModel() throws -> NotesModel {
+        let deps = try AppDependencies.inMemory(seedSampleData: true, now: start)
+        let model = NotesModel(repository: deps.notes, settings: deps.settings, autosaveDelay: .seconds(60))
+        model.load()
+        return model
+    }
+
+    @Test func arrowKeysWalkTheVisibleOrderAndStopAtEnds() throws {
+        let model = try makeModel()
+        let ordered = model.groups.all.map(\.id)
+        model.select(ordered[0])
+        model.selectAdjacent(-1)
+        #expect(model.selectedNoteID == ordered[0])
+        model.selectAdjacent(1); model.selectAdjacent(1)
+        #expect(model.selectedNoteID == ordered[2])
+        for _ in 0..<10 { model.selectAdjacent(1) }
+        #expect(model.selectedNoteID == ordered.last)
+    }
+
+    @Test func dragMovesWithinGroupOnly() throws {
+        let model = try makeModel()
+        let others = model.groups.others.map(\.id)
+        model.moveNote(others[0], relativeTo: others[2], placeAfter: true)
+        #expect(model.groups.others.map(\.id) == [others[1], others[2], others[0], others[3]])
+        let pinned = try #require(model.groups.pinned.first?.id)
+        model.moveNote(pinned, relativeTo: others[1], placeAfter: false) // across groups: ignored
+        #expect(model.groups.pinned.first?.id == pinned)
+    }
+}

@@ -22,6 +22,17 @@ public final class AppDependencies {
         self.isInMemory = isInMemory
     }
 
+    /// Permanently removes all local data: notes (including Trash), cached
+    /// Outlook items, sync state and settings. Callers must confirm with the user first.
+    public func deleteAllData() throws {
+        try notes.deleteAll()
+        let context = modelContainer.mainContext
+        try context.fetch(FetchDescriptor<ExternalItemRecord>()).forEach(context.delete)
+        try context.fetch(FetchDescriptor<IntegrationStateRecord>()).forEach(context.delete)
+        try context.save()
+        settings.save(.defaults)
+    }
+
     /// The real on-disk store in Application Support.
     public static func live() throws -> AppDependencies {
         let url = try PersistenceController.defaultStoreURL()

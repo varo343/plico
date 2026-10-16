@@ -95,6 +95,18 @@ public final class NotesModel {
         }
     }
 
+    /// Keyboard navigation in the list (↑ / ↓).
+    public func selectAdjacent(_ offset: Int) {
+        let ordered = groups.all
+        guard !ordered.isEmpty else { return }
+        guard let current = selectedNoteID, let index = ordered.firstIndex(where: { $0.id == current }) else {
+            select(ordered[offset > 0 ? 0 : ordered.count - 1].id)
+            return
+        }
+        let target = min(max(index + offset, 0), ordered.count - 1)
+        if target != index { select(ordered[target].id) }
+    }
+
     public func requestSearchFocus() {
         searchFocusRequest += 1
     }
@@ -218,6 +230,18 @@ public final class NotesModel {
             }
         }
         reload()
+    }
+
+    /// Drag and drop in Manual sort: places `id` before or after `targetID`.
+    /// Notes only move within their own group (pinned or not).
+    public func moveNote(_ id: UUID, relativeTo targetID: UUID, placeAfter: Bool) {
+        guard canReorder, id != targetID else { return }
+        for (pinned, group) in [(true, groups.pinned), (false, groups.others)] {
+            guard let from = group.firstIndex(where: { $0.id == id }),
+                  let target = group.firstIndex(where: { $0.id == targetID }) else { continue }
+            move(inPinnedGroup: pinned, from: [from], to: placeAfter ? target + 1 : target)
+            return
+        }
     }
 
     /// Writes pending editor changes immediately (focus loss, quit, ⌘S, switching notes).

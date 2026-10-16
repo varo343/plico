@@ -313,3 +313,36 @@ final class EditorHarness {
         #expect(h.plainBlocks == ["secXond", "first"])
     }
 }
+
+@MainActor
+@Suite(.serialized) struct EditorLayoutTests {
+    /// Regression: in the real three-column layout, SwiftUI measures blocks at
+    /// several candidate widths; a block must end up sized for its final width.
+    @Test(arguments: [820.0, 1000, 1240])
+    func blocksNeverOverlapInRealLayout(windowWidth: Double) async throws {
+        let app = AppModel(dependencies: try AppDependencies.inMemory(seedSampleData: true))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: 700), styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = NSHostingView(rootView: RootView(app: app))
+        try? await Task.sleep(for: .milliseconds(700))
+
+        func collect(_ view: NSView) -> [BlockNSTextView] {
+            (view as? BlockNSTextView).map { [$0] } ?? view.subviews.flatMap(collect)
+        }
+        let views = collect(window.contentView!).sorted {
+            $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY
+        }
+        #expect(views.count >= 5)
+        for view in views {
+            // Text must be laid out at the width it is displayed at.
+            #expect(abs((view.textContainer?.size.width ?? 0) - view.bounds.width) < 0.5, "layout width differs from frame: \(view.string.prefix(20))")
+            let needed = view.height(forWidth: view.bounds.width, minimumLineHeight: 0)
+            #expect(view.bounds.height + 1.5 >= needed, "block too short for its text: \(view.string.prefix(20))")
+        }
+        let frames = views.map { $0.convert($0.bounds, to: nil) }
+        for (upper, lower) in zip(frames, frames.dropFirst()) {
+            #expect(upper.minY >= lower.maxY - 0.5, "blocks overlap")
+        }
+    }
+}

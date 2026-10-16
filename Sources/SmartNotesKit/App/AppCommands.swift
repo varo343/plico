@@ -19,6 +19,9 @@ public struct AppCommands: Commands {
             Button("Save") { app?.notes.flush() }
                 .keyboardShortcut("s")
                 .disabled(app == nil)
+            Button("Export All Notes…") { app?.exportAllNotes() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(app == nil)
         }
         CommandMenu("Note") {
             Group {

@@ -41,6 +41,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
             <key>UTTypeDescription</key><string>Smart Notes block (in-app drag)</string>
             <key>UTTypeConformsTo</key><array><string>public.data</string></array>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key><string>local.smartnotes.note</string>
+            <key>UTTypeDescription</key><string>Smart Notes note (in-app drag)</string>
+            <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+        </dict>
     </array>
 </dict>
 </plist>

@@ -33,3 +33,23 @@ import Testing
         #expect(loaded.appearance == .system)
     }
 }
+
+@MainActor
+@Suite struct SettingsModelTests {
+    @Test func updatesNeverClobberValuesSavedElsewhere() {
+        let defaults = UserDefaults(suiteName: "SmartNotesTests.\(UUID().uuidString)")!
+        let store = UserDefaultsSettingsStore(defaults: defaults, key: "settings")
+        let settings = SettingsModel(store: store)
+
+        // The note list saves the sort mode directly into the store...
+        var fromList = store.load()
+        fromList.sortMode = .dueDate
+        store.save(fromList)
+        // ...then the Settings window changes something else.
+        settings.update { $0.defaultFontSize = .large }
+
+        #expect(store.load().sortMode == .dueDate)
+        #expect(store.load().defaultFontSize == .large)
+        #expect(settings.editorDefaults == EditorDefaults(fontFamily: .system, fontSize: .large))
+    }
+}

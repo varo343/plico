@@ -26,26 +26,46 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Hashable {
 
     /// Destinations where creating a note is appropriate (shows the FAB).
     var allowsCreation: Bool { self == .notes || self == .today }
+    /// Destinations whose detail column edits the selected note.
+    var showsEditor: Bool { self == .notes || self == .today }
 }
 
 /// Three-column layout: sidebar · list · editor.
 public struct RootView: View {
     @Bindable private var app: AppModel
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    /// True when the sidebar was hidden automatically for a narrow window,
+    /// so it is restored when the window widens (a manual choice is respected).
+    @State private var sidebarAutoCollapsed = false
+    private static let collapseWidth: CGFloat = 880
 
     public init(app: AppModel) {
         self.app = app
     }
 
     public var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
-                .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 240)
+                .navigationSplitViewColumnWidth(min: 190, ideal: 215, max: 240)
         } content: {
             content
-                .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
+                .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 360)
         } detail: {
             detail
-                .frame(minWidth: 440)
+                .frame(minWidth: 380)
+        }
+        // Narrow windows drop to list + editor instead of squeezing the editor.
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            if width < Self.collapseWidth, columnVisibility == .all {
+                columnVisibility = .doubleColumn
+                sidebarAutoCollapsed = true
+            } else if width >= Self.collapseWidth, sidebarAutoCollapsed {
+                columnVisibility = .all
+                sidebarAutoCollapsed = false
+            }
+        }
+        .onChange(of: columnVisibility) { _, visibility in
+            if visibility == .all { sidebarAutoCollapsed = false }
         }
         .overlay(alignment: .bottomTrailing) {
             if app.destination.allowsCreation {
@@ -61,6 +81,9 @@ public struct RootView: View {
             }
         }
         .frame(minWidth: 820, minHeight: 520)
+        .navigationTitle("")
+        // Let each column's warm surface run up under the title bar.
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .tint(SNColor.focusRing)
         .alert("Something went wrong", isPresented: Binding(
             get: { app.notes.errorMessage != nil },
@@ -74,6 +97,13 @@ public struct RootView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: SNSpacing.xs) {
+                AppMark()
+                Text("Smart Notes").font(.system(size: 15, weight: .bold)).foregroundStyle(SNColor.textPrimary)
+            }
+            .padding(.horizontal, SNSpacing.s)
+            .padding(.bottom, SNSpacing.m)
+            .accessibilityElement(children: .combine)
             ForEach(SidebarDestination.allCases) { destination in
                 SidebarDestinationRow(
                     title: destination.title,
@@ -109,21 +139,34 @@ public struct RootView: View {
         case .today:
             TodayView(today: app.today, notes: app.notes) { app.destination = .notes }
         case .mentions:
-            EmptyState(symbol: "envelope", title: "Outlook not connected",
-                       message: "Mentions will show selected Outlook messages. Coming in Milestone 4.")
+            EmptyState(symbol: "envelope", tint: SNColor.accentCoral, title: "Outlook isn't set up",
+                       message: "Mentions will show Outlook messages you choose to follow, such as flagged mail. This version doesn't connect to Outlook yet.")
                 .background(SNColor.card)
         }
     }
 
     @ViewBuilder
     private var detail: some View {
-        if app.destination == .notes || app.destination == .today, let editor = app.notes.editor {
-            NoteEditorView(model: editor, notes: app.notes)
+        if app.destination.showsEditor, let editor = app.notes.editor {
+            NoteEditorView(model: editor, notes: app.notes, defaults: app.settings.editorDefaults)
                 .id(editor.note.id)
         } else {
-            EmptyState(symbol: "note.text", title: app.destination == .trash ? "Restore a note to edit it" : "No note selected",
-                       message: app.destination == .notes ? "Select a note or press ⌘N." : "")
-                .background(SNColor.canvas)
+            Group {
+                switch app.destination {
+                case .trash:
+                    EmptyState(symbol: "arrow.uturn.backward", tint: SNColor.borderSubtle, title: "Restore a note to edit it", message: "")
+                case .mentions:
+                    Color.clear
+                default:
+                    if app.notes.hasAnyNotes {
+                        EmptyState(symbol: "note.text", tint: SNColor.borderSubtle, title: "No note selected", message: "Select a note or press ⌘N.")
+                    } else {
+                        Color.clear // first launch: the list's "Write your first note" is the one call to action
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(SNColor.canvas)
         }
     }
 }

@@ -56,54 +56,54 @@ extension FontFamilyPreset {
     }
 }
 
-/// Compact header bar. Formatting controls appear while text is selected or
-/// when toggled with "Aa"; the bar's height never changes, so text never jumps.
+/// Floating formatting pill. Appears while text is selected or when toggled
+/// from the window toolbar. Essential formatting also has keyboard shortcuts.
 struct NoteEditorToolbar: View {
     let model: NoteEditorModel
-    @Binding var showsFormatting: Bool
-
-    private var isActive: Bool { showsFormatting || model.hasTextSelection }
 
     var body: some View {
-        HStack(spacing: SNSpacing.xs) {
-            if isActive {
-                blockTypeMenu
-                Divider().frame(height: 18)
-                markButton(.bold, symbol: "bold", label: "Bold", shortcut: "⌘B")
-                markButton(.italic, symbol: "italic", label: "Italic", shortcut: "⌘I")
-                markButton(.underline, symbol: "underline", label: "Underline", shortcut: "⌘U")
-                markButton(.strikethrough, symbol: "strikethrough", label: "Strikethrough", shortcut: "⇧⌘X")
-                markButton(.code, symbol: "chevron.left.forwardslash.chevron.right", label: "Inline Code", shortcut: nil)
-                Button { EditorActions.editLink() } label: { Image(systemName: "link") }
-                    .help("Link (⌘K)")
-                    .accessibilityLabel("Link")
-                Divider().frame(height: 18)
-                fontMenu
-                sizeMenu
-            }
-            Spacer()
-            Button { showsFormatting.toggle() } label: {
-                Text("Aa").font(.system(size: 13, weight: .semibold))
-            }
-            .help(showsFormatting ? "Hide formatting" : "Show formatting")
-            .accessibilityLabel(showsFormatting ? "Hide formatting controls" : "Show formatting controls")
+        HStack(spacing: 2) {
+            blockTypeMenu
+            divider
+            markButton(.bold, symbol: "bold", label: "Bold", shortcut: "⌘B")
+            markButton(.italic, symbol: "italic", label: "Italic", shortcut: "⌘I")
+            markButton(.underline, symbol: "underline", label: "Underline", shortcut: "⌘U")
+            markButton(.strikethrough, symbol: "strikethrough", label: "Strikethrough", shortcut: "⇧⌘X")
+            markButton(.code, symbol: "chevron.left.forwardslash.chevron.right", label: "Inline Code", shortcut: nil)
+            Button { EditorActions.editLink() } label: { icon("link") }
+                .help("Link (⌘K)")
+                .accessibilityLabel("Link")
+            divider
+            fontMenu
+            sizeMenu
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .foregroundStyle(SNColor.textPrimary)
-        .padding(.horizontal, SNSpacing.m)
-        .frame(height: 40)
-        .background(SNColor.canvas)
-        .overlay(alignment: .bottom) {
-            if isActive { Rectangle().fill(SNColor.borderSubtle).frame(height: 1) }
-        }
+        .padding(.horizontal, SNSpacing.xs)
+        .padding(.vertical, 5)
+        .background(SNColor.card, in: Capsule())
+        .overlay(Capsule().stroke(SNColor.outline.opacity(0.8), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.14), radius: 10, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Formatting")
+    }
+
+    private var divider: some View {
+        Rectangle().fill(SNColor.borderSubtle).frame(width: 1, height: 18).padding(.horizontal, 4)
+    }
+
+    private func icon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 12.5, weight: .semibold))
+            .frame(width: 28, height: 26)
+            .contentShape(Rectangle())
     }
 
     private func markButton(_ mark: InlineMark, symbol: String, label: String, shortcut: String?) -> some View {
         let isOn = model.selectionMarks.contains(mark) && model.hasTextSelection
         return Button { EditorActions.toggle(mark) } label: {
-            Image(systemName: symbol)
-                .frame(width: 24, height: 24)
-                .background(isOn ? SNColor.borderSubtle : .clear, in: RoundedRectangle(cornerRadius: 6))
+            icon(symbol)
+                .background(isOn ? SNColor.borderSubtle : .clear, in: RoundedRectangle(cornerRadius: 7))
         }
         .help(shortcut.map { "\(label) (\($0))" } ?? label)
         .accessibilityLabel(label)
@@ -116,10 +116,11 @@ struct NoteEditorToolbar: View {
                 Button(type.menuTitle) { model.setBlockType(type) }
             }
         } label: {
-            Text(model.activeBlock?.type.menuTitle ?? "Body").font(.system(size: 12, weight: .medium))
+            Text(model.activeBlock?.type.menuTitle ?? "Body").font(.system(size: 12, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .padding(.horizontal, 6)
         .help("Block type")
         .accessibilityLabel("Block type")
     }
@@ -135,6 +136,7 @@ struct NoteEditorToolbar: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .padding(.horizontal, 4)
         .help("Font (applies to selection, or the whole block)")
         .accessibilityLabel("Font")
     }
@@ -150,6 +152,7 @@ struct NoteEditorToolbar: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .padding(.horizontal, 4)
         .help("Text size (applies to selection, or the whole block)")
         .accessibilityLabel("Text size")
     }

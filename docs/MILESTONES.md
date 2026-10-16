@@ -107,8 +107,47 @@ Cards have no completion controls, per the UX spec.
 **Known limitations:** metadata changes are not part of the editor's ⌘Z history (they are explicit,
 single-click actions and easy to reverse in the strip).
 
-## Milestone 4 — Outlook (mock fixtures first) ⬜
-## Milestone 5 — Polish, accessibility, export ⬜
+## Milestone 4 — Outlook ⏸ skipped for now (at your request)
+Mentions shows an honest "Outlook isn't set up" state. Domain model, persistence and dedupe for
+Outlook items already exist (M0) and are tested; sign-in, Graph fetch and the Mentions UI are not built.
+## Milestone 5 — Polish, export, recovery ✅ (automated) · 🟡 manual checks pending
+**UI redesign** (against the UX spec):
+- ✅ Window: unified toolbar without a title; each column's warm surface runs up under the title bar
+- ✅ Sidebar: app mark (fixed organic shape, ink outline) + wordmark; organic selection pill
+- ✅ Note list: custom rows instead of a system table. Selected card with outline; one quiet
+  metadata line, with color only where attention is needed (High, Overdue); pinned/notes section labels;
+  ↑/↓ to move, Return to edit, Delete to trash; drag to reorder (Manual sort) with insertion line
+- ✅ Editor: formatting moved into a floating pill (on selection, or via "Aa"); the editor no longer has
+  an empty top bar; quiet metadata row with "Aa" and a note-actions menu (Pin, Duplicate, Trash)
+- ✅ Illustrated empty states (tinted organic blob + ink outline): first note, no matches, Today, Trash, Mentions
+- ✅ Trash: custom rows, titles wrap, Restore / delete permanently
+- ✅ Dark mode: new `outline` token, so cartoon outlines stay visible on dark surfaces
+- ✅ Narrow windows: below 880 pt the sidebar collapses automatically and comes back when wider
+  (a manual collapse is respected); relaxed column minimums so nothing is clipped at 820 pt
+
+**Features:**
+- ✅ Settings window: Appearance (System/Light/Dark), editor default font and size with preview,
+  Data (Export, Show in Finder, Delete All)
+- ✅ Export (File ▸ Export All Notes… ⇧⌘E): dated folder with notes.json (lossless) + one Markdown
+  file per note (with front matter), Trash in a subfolder; never overwrites an earlier export
+- ✅ Delete all local data (confirmed): notes incl. Trash, cached Outlook data, sync state, settings
+- ✅ Recovery: save-failure banner offers "Copy as Text" (Markdown) as well as Retry
+- ✅ Settings writes never clobber the list's saved sort mode (tested)
+
+**Bugs fixed:**
+- ✅ Blocks could overlap after the editor changed width. The text was laid out at a different width than
+  its frame, because measuring resized the live text container. Measurement now uses a scratch copy.
+  A regression test in the real three-column layout fails on the old code and passes on the fix.
+
+- ✅ 172 tests passing (2 consecutive runs)
+
+**Manual checks pending:**
+- [ ] Settings ▸ Appearance switches immediately; editor font/size changes apply to open notes
+- [ ] Export: choose a folder, open notes.json and a few .md files
+- [ ] Delete All asks for confirmation, then leaves an empty app
+- [ ] Note list: ↑/↓/Return/Delete with keyboard; drag a note in Manual sort
+- [ ] Resize the window from wide to 820 pt and back: sidebar hides and returns
+- [ ] VoiceOver pass over list rows, editor metadata row, formatting pill
 
 ## Spec acceptance items already covered by M0 tests
 - Formatting persists across relaunch (on-disk container reopen test)

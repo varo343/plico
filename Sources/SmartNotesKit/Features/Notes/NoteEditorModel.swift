@@ -54,6 +54,8 @@ public final class NoteEditorModel {
     /// Block containing the caret; target of block commands.
     public private(set) var activeBlockID: UUID?
     public var linkDraft: LinkDraft?
+    /// Keeps the formatting bar visible without a selection (toolbar toggle).
+    public var showsFormattingBar = false
     public var linkError: String?
 
     @ObservationIgnored private let repository: NoteRepository

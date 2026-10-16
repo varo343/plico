@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,16 +8,18 @@ struct NoteEditorView: View {
     /// Supplies the metadata strip; nil hides it (e.g. in tests).
     var notes: NotesModel?
     var defaults = EditorDefaults()
-    @State private var showsFormatting = false
     @State private var draggingBlockID: UUID?
     @State private var dropTarget: DropTarget?
 
     var body: some View {
         VStack(spacing: 0) {
             if let error = model.saveError {
-                SaveErrorBanner(message: error) { model.flush() }
+                SaveErrorBanner(message: error, retry: { model.flush() }, copy: {
+                    // Recovery path: get the text out even if the store keeps failing.
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(NoteExport.markdown(model.note), forType: .string)
+                })
             }
-            NoteEditorToolbar(model: model, showsFormatting: $showsFormatting)
             ScrollView {
                 VStack(alignment: .leading, spacing: SNSpacing.m) {
                     TextField("Title", text: Binding(get: { model.note.title }, set: model.setTitle), axis: .vertical)
@@ -55,7 +58,7 @@ struct NoteEditorView: View {
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, SNSpacing.xl + SNSpacing.xs)
-                .padding(.top, SNSpacing.s)
+                .padding(.top, SNSpacing.l)
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
@@ -63,6 +66,18 @@ struct NoteEditorView: View {
             .contentMargins(.bottom, 96, for: .scrollContent)
         }
         .background(SNColor.canvas)
+        // Floating formatting bar: shown on selection or via the toolbar toggle.
+        // It overlays (never pushes) text, and stays clear of the New Note button.
+        .overlay(alignment: .bottom) {
+            if model.hasTextSelection || model.showsFormattingBar {
+                NoteEditorToolbar(model: model)
+                    .padding(.leading, SNSpacing.m)
+                    .padding(.trailing, 104)
+                    .padding(.bottom, SNSpacing.l)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: model.hasTextSelection || model.showsFormattingBar)
         .sheet(isPresented: Binding(get: { model.linkDraft != nil }, set: { if !$0 { model.cancelLinkEditing() } })) {
             LinkEditorSheet(model: model)
         }
@@ -84,8 +99,9 @@ struct NoteEditorView: View {
     }
 }
 
+/// Where a dragged block or note will land.
 struct DropTarget: Equatable {
-    var blockID: UUID
+    var itemID: UUID
     var placeAfter: Bool
 }
 
@@ -148,7 +164,7 @@ private struct BlockRow: View {
         .onHover { isHovered = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = $0 }
         .overlay(alignment: dropTarget?.placeAfter == true ? .bottom : .top) {
-            if dropTarget?.blockID == block.id {
+            if dropTarget?.itemID == block.id {
                 BlockInsertionIndicator().offset(y: dropTarget?.placeAfter == true ? 3 : -3)
             }
         }
@@ -239,13 +255,13 @@ private struct BlockDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        let target = DropTarget(blockID: blockID, placeAfter: info.location.y > rowHeight / 2)
+        let target = DropTarget(itemID: blockID, placeAfter: info.location.y > rowHeight / 2)
         if dropTarget != target { dropTarget = target }
         return DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
-        if dropTarget?.blockID == blockID { dropTarget = nil }
+        if dropTarget?.itemID == blockID { dropTarget = nil }
     }
 
     func performDrop(info: DropInfo) -> Bool {
@@ -262,6 +278,7 @@ private struct BlockDropDelegate: DropDelegate {
 private struct SaveErrorBanner: View {
     let message: String
     let retry: () -> Void
+    let copy: () -> Void
 
     var body: some View {
         HStack(spacing: SNSpacing.s) {
@@ -271,7 +288,10 @@ private struct SaveErrorBanner: View {
                 Text("Your changes are kept in this window. \(message)").font(SNFont.secondary)
             }
             Spacer()
+            Button("Copy as Text", action: copy)
+                .help("Copy this note as Markdown so nothing is lost")
             Button("Retry", action: retry)
+                .keyboardShortcut(.defaultAction)
         }
         .foregroundStyle(SNColor.textPrimary)
         .padding(SNSpacing.s)
