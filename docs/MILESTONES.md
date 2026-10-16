@@ -79,7 +79,34 @@ no block type changes, indent, block drag or Move Up/Down, undo is per block onl
 - Multi-block selection and multi-block drag are not supported (phase 2 in the spec).
 - Pasted headings become body text with bold; heading levels aren't inferred from pasted font sizes.
 
-## Milestone 3 — Priority, dates, Today ⬜
+## Milestone 3 — Priority, dates, Today ✅ (automated) · 🟡 manual checks pending
+- ✅ Metadata strip under the title: Priority (None/Low/Medium/High), Planned date, Due date, Pin
+  - date popover: calendar plus Today / Tomorrow / Next Week / Clear, with a one-line meaning for each date
+  - saved through the metadata path (no content autosave conflict); doesn't change "updated" time
+- ✅ Dates stored as local calendar days (`LocalDay`): stable across timezone and DST changes
+- ✅ Today screen: heading with localized date; sections Overdue → Due today → Planned today
+  - each note appears once (a deadline wins over a plan); trashed notes excluded; empty sections hidden
+  - sorting: overdue by oldest deadline, then priority; others by priority, then title
+  - cards: title, priority, date chips; click opens the note in the editor column (Today stays selected)
+  - read-only checklist preview, "n of m done"; completed items hidden unless "Show completed" is on
+  - empty state "Nothing scheduled for today" with Go to Notes; nothing suggested or inferred
+- ✅ Day rollover: refreshes at midnight, on timezone change and when the app becomes active
+- ✅ No automatic priorities or deadlines: new notes have none (tested)
+- ✅ No schema change: Today reads checklist items from notes, so existing stores open unchanged
+- ✅ 163 tests passing; Today and the strip rendered and checked in light and dark mode
+
+**Manual checks pending:**
+- [ ] Date popover: pick a date, Today/Tomorrow/Next Week/Clear; the list chips and Today update immediately
+- [ ] Leave the app open past midnight (or change the timezone): Today moves "due today" notes to Overdue
+- [ ] Keyboard only: Tab reaches priority, dates and pin; popovers work with the keyboard
+
+**Interpretation to confirm:** the spec's "completed checklist items can be hidden via toggle" is
+implemented as a read-only checklist preview on Today cards, with completed items hidden by default.
+Cards have no completion controls, per the UX spec.
+
+**Known limitations:** metadata changes are not part of the editor's ⌘Z history (they are explicit,
+single-click actions and easy to reverse in the strip).
+
 ## Milestone 4 — Outlook (mock fixtures first) ⬜
 ## Milestone 5 — Polish, accessibility, export ⬜
 

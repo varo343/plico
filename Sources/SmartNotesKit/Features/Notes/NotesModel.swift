@@ -40,8 +40,8 @@ public final class NotesModel {
     @ObservationIgnored private let settingsStore: SettingsStore
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let autosaveDelay: Duration
-    /// Unfiltered active notes, used for rank computations.
-    @ObservationIgnored private var activeNotes: [NoteSummary] = []
+    /// All active (non-trashed) notes, unfiltered by search. Drives Today.
+    public private(set) var activeNotes: [NoteSummary] = []
     /// Search hits (or all notes when not searching).
     @ObservationIgnored private var visibleNotes: [NoteSummary] = []
 
@@ -136,7 +136,31 @@ public final class NotesModel {
     }
 
     public func isPinned(_ id: UUID) -> Bool {
-        activeNotes.first { $0.id == id }?.isPinned ?? false
+        summary(for: id)?.isPinned ?? false
+    }
+
+    /// Current list metadata for a note (pin, priority, dates).
+    public func summary(for id: UUID) -> NoteSummary? {
+        activeNotes.first { $0.id == id }
+    }
+
+    // MARK: Priority and dates (explicit user choices only)
+
+    public func setPriority(_ priority: Priority, for id: UUID) {
+        perform("change the priority") { try repository.updateMetadata(id: id) { $0.priority = priority } }
+        reload()
+    }
+
+    /// When the user intends to work on the note. `nil` clears it.
+    public func setPlannedDate(_ day: LocalDay?, for id: UUID) {
+        perform("change the planned date") { try repository.updateMetadata(id: id) { $0.plannedDate = day } }
+        reload()
+    }
+
+    /// The note's deadline. `nil` clears it.
+    public func setDueDate(_ day: LocalDay?, for id: UUID) {
+        perform("change the due date") { try repository.updateMetadata(id: id) { $0.dueDate = day } }
+        reload()
     }
 
     public func moveToTrash(_ id: UUID) {

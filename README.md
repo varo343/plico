@@ -4,7 +4,7 @@ A native, local-first macOS note-taking app (SwiftUI + SwiftData). Specs:
 `Smart_Notes_Technical_Spec.md` (architecture, data, security) and
 `Smart_Notes_UX_UI_Design_Spec.md` (layout, visuals, interactions).
 
-**Status:** Milestones 0–2 complete (notes foundation and block editor; some interactions still need manual checks). See [`docs/MILESTONES.md`](docs/MILESTONES.md).
+**Status:** Milestones 0–3 complete (notes, block editor, priority/dates/Today; some interactions still need manual checks). See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 ## Requirements
 - macOS 14 Sonoma or later (developed on macOS 27 / Xcode 27 / Swift 6.4)
@@ -36,9 +36,11 @@ Sources/
   SmartNotesKit/
     App/                    composition root (AppDependencies), root navigation
     Features/Notes/         list, Trash, editor (NotesModel, NoteEditorModel, per-block NSTextView)
-    Features/…              Today / Outlook / Settings (later milestones)
+    Features/Today/         TodayModel, TodayView (Overdue / Due today / Planned today)
+    Features/…              Outlook / Settings (later milestones)
     Domain/Models/          Note, NoteBlock, RichText, LocalDay, ExternalItem, settings
-    Domain/Services/        Rank, NoteText, NoteSorter/ManualOrdering, BlockEditing (Enter/Backspace rules)
+    Domain/Services/        Rank, NoteText, NoteSorter/ManualOrdering, BlockEditing, EditHistory,
+                            TodayRules, LinkValidator
     Domain/Repositories/    repository protocols
     Data/Persistence/       SwiftData schema V1, migration plan, repository impls
     Data/Outlook, Security/ (M4: Graph client, OAuth PKCE, Keychain)

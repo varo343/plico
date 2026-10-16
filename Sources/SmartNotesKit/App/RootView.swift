@@ -107,9 +107,7 @@ public struct RootView: View {
         case .trash:
             TrashView(model: app.notes)
         case .today:
-            EmptyState(symbol: "sun.max", title: "Nothing scheduled for today",
-                       message: "Today will list notes you planned or that are due. Coming in Milestone 3.")
-                .background(SNColor.card)
+            TodayView(today: app.today, notes: app.notes) { app.destination = .notes }
         case .mentions:
             EmptyState(symbol: "envelope", title: "Outlook not connected",
                        message: "Mentions will show selected Outlook messages. Coming in Milestone 4.")
@@ -119,8 +117,8 @@ public struct RootView: View {
 
     @ViewBuilder
     private var detail: some View {
-        if app.destination == .notes, let editor = app.notes.editor {
-            NoteEditorView(model: editor)
+        if app.destination == .notes || app.destination == .today, let editor = app.notes.editor {
+            NoteEditorView(model: editor, notes: app.notes)
                 .id(editor.note.id)
         } else {
             EmptyState(symbol: "note.text", title: app.destination == .trash ? "Restore a note to edit it" : "No note selected",

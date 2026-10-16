@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 /// Title + block body for one note. Minimal chrome; writing comes first.
 struct NoteEditorView: View {
     @Bindable var model: NoteEditorModel
+    /// Supplies the metadata strip; nil hides it (e.g. in tests).
+    var notes: NotesModel?
     var defaults = EditorDefaults()
     @State private var showsFormatting = false
     @State private var draggingBlockID: UUID?
@@ -23,6 +25,10 @@ struct NoteEditorView: View {
                         .textFieldStyle(.plain)
                         .onSubmit { model.focusFirstBlock() }
                         .accessibilityLabel("Note title")
+
+                    if let notes {
+                        NoteMetadataStrip(noteID: model.note.id, notes: notes)
+                    }
 
                     // Not lazy: recycling rows would recreate a text view while it
                     // is being edited, losing focus and in-progress input.
