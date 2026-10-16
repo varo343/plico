@@ -35,3 +35,49 @@ import Testing
         #expect(abs(actual.width - 50) < 1 && abs(actual.height - 20) < 1)
     }
 }
+
+@MainActor
+@Suite(.serialized) struct FloatingPanelPlacementTests {
+    private func makeWindow() -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.orderFront(nil)
+        return window
+    }
+
+    @Test func tooltipIsCenteredBelowItsControl() {
+        let window = makeWindow()
+        defer { window.close() }
+        let anchor = window.convertToScreen(NSRect(x: 100, y: 300, width: 40, height: 20))
+        let controller = FloatingPanelController()
+        controller.show(Text("Tooltip text").padding(6), below: anchor, in: window, acceptsKey: false,
+                        centered: true, passesClicksThrough: true)
+        defer { controller.close() }
+        let frame = controller.panelFrame
+        #expect(frame != nil)
+        #expect(abs((frame?.midX ?? 0) - anchor.midX) < 1)
+        #expect((frame?.maxY ?? .infinity) <= anchor.minY + FloatingPanelController.margin) // below, content top under the control
+    }
+
+    @Test func tooltipCanOpenAbove() {
+        let window = makeWindow()
+        defer { window.close() }
+        let anchor = window.convertToScreen(NSRect(x: 100, y: 100, width: 40, height: 20))
+        let controller = FloatingPanelController()
+        controller.show(Text("Above").padding(6), below: anchor, in: window, acceptsKey: false,
+                        centered: true, preferAbove: true, passesClicksThrough: true)
+        defer { controller.close() }
+        #expect((controller.panelFrame?.minY ?? 0) >= anchor.maxY - FloatingPanelController.margin)
+    }
+
+    @Test func menuAlignsWithLeadingEdgeOfItsButton() {
+        let window = makeWindow()
+        defer { window.close() }
+        let anchor = window.convertToScreen(NSRect(x: 300, y: 300, width: 30, height: 24))
+        let controller = FloatingPanelController()
+        controller.show(SNMenuList(entries: [.item(SNMenuItem(title: "A") {})], dismiss: {}), below: anchor, in: window, acceptsKey: true)
+        defer { controller.close() }
+        #expect(abs(((controller.panelFrame?.minX ?? 0) + FloatingPanelController.margin) - anchor.minX) < 1)
+        #expect((controller.panelFrame?.maxY ?? .infinity) <= anchor.minY + FloatingPanelController.margin)
+    }
+}

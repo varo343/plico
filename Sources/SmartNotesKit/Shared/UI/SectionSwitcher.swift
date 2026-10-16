@@ -44,6 +44,7 @@ struct SectionSwitcher: View {
                 } else {
                     Image(systemName: isSelected ? destination.selectedSymbol : destination.symbol)
                         .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                        .iconMotion(for: destination.symbol, on: isSelected)
                         .frame(width: 34)
                         .transition(.opacity)
                 }

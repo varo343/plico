@@ -52,6 +52,7 @@ public struct RootView: View {
                     listColumn
                         .frame(width: listWidth)
                         .overlay(alignment: .trailing) { ColumnResizeHandle(width: $storedListWidth, current: listWidth) }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 noteCard
                     .padding(.vertical, Self.cardMargin)
@@ -60,6 +61,8 @@ public struct RootView: View {
                     .padding(.top, app.isListVisible ? 0 : Self.trafficLightsHeight)
             }
         }
+        // Showing/hiding the list: the column slides and the note card grows smoothly.
+        .snAnimation(.spring(response: 0.4, dampingFraction: 0.86), value: app.isListVisible)
         .background(SNColor.sidebar)
         .ignoresSafeArea(.container, edges: .top) // content runs under the hidden title bar
         .overlay(alignment: .bottomTrailing) {
@@ -93,7 +96,6 @@ public struct RootView: View {
 
     private static let cardMargin: CGFloat = 8
     /// Space kept clear for the window's traffic-light buttons.
-    private static let trafficLightsWidth: CGFloat = 78
     private static let trafficLightsHeight: CGFloat = 36
     private static let minimumCardWidth: CGFloat = 400
     @AppStorage("SmartNotes.listColumnWidth") private var storedListWidth: Double = 320
@@ -106,15 +108,16 @@ public struct RootView: View {
 
     private var listColumn: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Spacer().frame(width: Self.trafficLightsWidth)
+            // Clear of the traffic lights; the switcher sits where the section title used to be.
+            Color.clear.frame(height: Self.trafficLightsHeight)
+            HStack(spacing: SNSpacing.xs) {
                 SectionSwitcher(selection: $app.destination)
                 Spacer(minLength: 0)
+                sectionAccessory
             }
-            .frame(height: 30) // vertically centered with the traffic lights
-            .padding(.top, 1)
-            .padding(.trailing, SNSpacing.s)
+            .padding(.horizontal, SNSpacing.m)
             .padding(.bottom, SNSpacing.s)
+            .zIndex(1)
             content
                 .id(app.destination)
                 .transition(.opacity.combined(with: .offset(y: 6)))
@@ -136,6 +139,16 @@ public struct RootView: View {
         .clipShape(RoundedRectangle(cornerRadius: SNRadius.standard))
         .overlay(RoundedRectangle(cornerRadius: SNRadius.standard).strokeBorder(SNColor.borderSubtle, lineWidth: 1))
         .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+    }
+
+    /// Section-specific controls next to the switcher.
+    @ViewBuilder
+    private var sectionAccessory: some View {
+        switch app.destination {
+        case .notes: NotesSortMenu(model: app.notes)
+        case .trash: EmptyTrashButton(model: app.notes)
+        default: EmptyView()
+        }
     }
 
     @ViewBuilder
@@ -195,7 +208,7 @@ private struct NoteCardTopBar: View {
         let showsFormatting = editor.map { $0.hasTextSelection || $0.showsFormattingBar } ?? false
         HStack(spacing: SNSpacing.xs) {
             Button { app.isListVisible.toggle() } label: {
-                Image(systemName: "sidebar.left").font(.system(size: 13))
+                MotionIcon(symbol: "sidebar.left")
             }
             .buttonStyle(SNIconButtonStyle(isActive: !app.isListVisible))
             .foregroundStyle(SNColor.textSecondary)

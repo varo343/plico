@@ -38,7 +38,7 @@ struct SNBadge: View {
             .foregroundStyle(tone == .neutral ? SNColor.textSecondary : SNColor.textPrimary)
             .padding(.horizontal, size == .small ? 7 : 9)
             .padding(.vertical, size == .small ? 2 : 3.5)
-            .background(WobblyCapsuleShape(variant: tone.rawValue).fill(tone.fill))
+            .background(WobblyCapsuleShape(variant: tone.rawValue, amplitude: 2.2).fill(tone.fill))
             .rotationEffect(.degrees(tone.tilt))
             .fixedSize()
             .transition(.scale(scale: 0.8).combined(with: .opacity))

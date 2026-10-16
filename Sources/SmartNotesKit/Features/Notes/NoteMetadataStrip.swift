@@ -21,7 +21,10 @@ struct NoteMetadataStrip: View {
             DateField(kind: .planned, day: summary.plannedDate, today: today) { notes.setPlannedDate($0, for: noteID) }
             DateField(kind: .due, day: summary.dueDate, today: today) { notes.setDueDate($0, for: noteID) }
             Button { notes.togglePin(noteID) } label: {
-                Label(summary.isPinned ? "Pinned" : "Pin", systemImage: summary.isPinned ? "pin.fill" : "pin")
+                HStack(spacing: 5) {
+                    MotionIcon(symbol: summary.isPinned ? "pin.fill" : "pin", size: 12)
+                    Text(summary.isPinned ? "Pinned" : "Pin")
+                }
             }
             .buttonStyle(MetadataButtonStyle(isSet: summary.isPinned))
             .help(summary.isPinned ? "Unpin (⇧⌘P)" : "Pin to the top of the list (⇧⌘P)")
@@ -45,8 +48,11 @@ private struct PriorityField: View {
             }
         } label: {
             if priority == .none {
-                Label("Priority", systemImage: "flag").labelStyle(.titleAndIcon)
-                    .font(.system(size: 12)).foregroundStyle(SNColor.textSecondary)
+                HStack(spacing: 5) {
+                    MotionIcon(symbol: "flag", size: 12)
+                    Text("Priority")
+                }
+                .font(.system(size: 12)).foregroundStyle(SNColor.textSecondary)
             } else {
                 PriorityBadge(priority)
             }
@@ -74,10 +80,12 @@ private struct DateField: View {
                 if let day {
                     DateMetadataChip(kind, day: day, today: today)
                 } else {
-                    Label(title, systemImage: kind == .planned ? "calendar" : "flag.checkered")
-                        .labelStyle(.titleAndIcon)
-                        .font(.system(size: 12))
-                        .foregroundStyle(SNColor.textSecondary)
+                    HStack(spacing: 5) {
+                        MotionIcon(symbol: kind == .planned ? "calendar" : "flag.checkered", size: 12)
+                        Text(title)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(SNColor.textSecondary)
                 }
             }
             .padding(.horizontal, 6)
@@ -104,6 +112,7 @@ private struct MetadataButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let isSet: Bool
     @State private var isHovered = false
+    @State private var pulse = 0
 
     var body: some View {
         configuration.label
@@ -113,11 +122,15 @@ private struct MetadataButtonBody: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background {
-                if isHovered { Capsule().fill(SNColor.borderSubtle.opacity(0.55)) }
+                if isHovered { WobblyCapsuleShape(variant: 3, amplitude: 1.8).fill(SNColor.borderSubtle.opacity(0.55)) }
             }
             .contentShape(Capsule())
             .snPressEffect(configuration.isPressed)
             .snAnimation(SNMotion.hover, value: isHovered)
-            .onHover { isHovered = $0 }
+            .environment(\.snHoverPulse, pulse)
+            .onHover { inside in
+                isHovered = inside
+                if inside { pulse += 1 }
+            }
     }
 }

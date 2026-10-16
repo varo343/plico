@@ -39,7 +39,6 @@ struct TodayView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Today").font(SNFont.section).foregroundStyle(SNColor.textPrimary)
             HStack {
                 Text(today.today.startDate().formatted(.dateTime.weekday(.wide).day().month(.wide)))
                     .font(SNFont.secondary)

@@ -38,16 +38,7 @@ struct NotesListView: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: SNSpacing.s) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Notes").font(.system(size: 22, weight: .bold)).foregroundStyle(SNColor.textPrimary)
-                Text("\(model.activeNotes.count)")
-                    .font(.system(size: 13, weight: .medium).monospacedDigit())
-                    .foregroundStyle(SNColor.textSecondary)
-                    .accessibilityLabel("\(model.activeNotes.count) notes")
-                Spacer()
-                sortMenu
-            }
+        VStack(alignment: .leading, spacing: SNSpacing.xs) {
             searchField
             if model.hasAnyNotes, !model.canReorder {
                 Label(model.isSearching ? "Clear search to reorder" : "Sorted by \(model.sortMode.label.lowercased())",
@@ -58,7 +49,6 @@ struct NotesListView: View {
             }
         }
         .padding(.horizontal, SNSpacing.m)
-        .padding(.top, SNSpacing.xs)
         .padding(.bottom, SNSpacing.s)
     }
 
@@ -90,19 +80,6 @@ struct NotesListView: View {
             RoundedRectangle(cornerRadius: SNRadius.small)
                 .strokeBorder(searchFocused ? SNColor.focusRing.opacity(0.7) : SNColor.borderSubtle, lineWidth: searchFocused ? 1.5 : 1)
         )
-    }
-
-    private var sortMenu: some View {
-        SNDropdown(minWidth: 190, showsChevron: false) {
-            [.header("Sort by")] + NoteSortMode.allCases.map { mode in
-                .item(SNMenuItem(title: mode.label, icon: mode.symbol, isChecked: model.sortMode == mode) { model.sortMode = mode })
-            }
-        } label: {
-            Image(systemName: "arrow.up.arrow.down").font(.system(size: 12, weight: .semibold))
-        }
-        .foregroundStyle(SNColor.textPrimary)
-        .hoverLabel("Sort: \(model.sortMode.label)")
-        .accessibilityLabel("Sort notes, currently \(model.sortMode.label)")
     }
 
     // MARK: List
@@ -330,5 +307,23 @@ struct NoteListRow: View {
 private struct RowPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.snPressEffect(configuration.isPressed, scale: 0.985)
+    }
+}
+
+/// Sort dropdown shown next to the section switcher while in Notes.
+struct NotesSortMenu: View {
+    @Bindable var model: NotesModel
+
+    var body: some View {
+        SNDropdown(minWidth: 190, showsChevron: false) {
+            [.header("Sort by")] + NoteSortMode.allCases.map { mode in
+                .item(SNMenuItem(title: mode.label, icon: mode.symbol, isChecked: model.sortMode == mode) { model.sortMode = mode })
+            }
+        } label: {
+            MotionIcon(symbol: "arrow.up.arrow.down", size: 12, weight: .semibold)
+        }
+        .foregroundStyle(SNColor.textPrimary)
+        .hoverLabel("Sort: \(model.sortMode.label)")
+        .accessibilityLabel("Sort notes, currently \(model.sortMode.label)")
     }
 }

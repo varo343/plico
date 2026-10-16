@@ -43,35 +43,6 @@ private struct PressEffect: ViewModifier {
     }
 }
 
-/// A short playful wiggle, replayed whenever `trigger` changes (menu icons on hover).
-struct Jiggle<Trigger: Equatable & Sendable>: ViewModifier {
-    let trigger: Trigger
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func body(content: Content) -> some View {
-        if reduceMotion {
-            content
-        } else {
-            content.keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, angle in
-                view.rotationEffect(.degrees(angle))
-            } keyframes: { _ in
-                KeyframeTrack {
-                    CubicKeyframe(-12, duration: 0.07)
-                    CubicKeyframe(10, duration: 0.08)
-                    CubicKeyframe(-5, duration: 0.07)
-                    CubicKeyframe(0, duration: 0.1)
-                }
-            }
-        }
-    }
-}
-
-extension View {
-    func jiggle<Trigger: Equatable & Sendable>(on trigger: Trigger) -> some View {
-        modifier(Jiggle(trigger: trigger))
-    }
-}
-
 /// Entrance for floating surfaces: a small scale-up from the anchor edge plus fade.
 struct PopIn: ViewModifier {
     var anchor: UnitPoint = .top

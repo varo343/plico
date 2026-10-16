@@ -38,10 +38,6 @@ struct SettingsPaneList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Settings").font(.system(size: 22, weight: .bold)).foregroundStyle(SNColor.textPrimary)
-                .padding(.horizontal, SNSpacing.m)
-                .padding(.top, SNSpacing.xs)
-                .padding(.bottom, SNSpacing.s)
             ForEach(SettingsPane.allCases) { pane in
                 Button { selection = pane } label: {
                     HStack(spacing: SNSpacing.s) {

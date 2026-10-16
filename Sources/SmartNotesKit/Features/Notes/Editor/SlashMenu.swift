@@ -42,7 +42,7 @@ struct SlashMenuView: View {
             HStack(spacing: SNSpacing.xs) {
                 Image(systemName: command.type.symbol)
                     .font(.system(size: 12, weight: .medium))
-                    .jiggle(on: isHighlighted)
+                    .iconMotion(for: command.type.symbol, on: isHighlighted)
                     .frame(width: 24, height: 22)
                     .background(SNColor.canvas, in: RoundedRectangle(cornerRadius: 6))
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(SNColor.borderSubtle))

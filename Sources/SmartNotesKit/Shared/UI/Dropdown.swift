@@ -34,17 +34,28 @@ final class FloatingPanelController {
     private var panel: FloatingPanel?
     private weak var parent: NSWindow?
     private var anchor: NSRect = .zero
+    private var centered = false
+    private var preferAbove = false
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
     var onClose: (() -> Void)?
 
     var isShown: Bool { panel != nil }
+    /// Frame of the open panel in screen coordinates (for tests).
+    var panelFrame: NSRect? { panel?.frame }
 
     /// - acceptsKey: true for menus navigated with the keyboard; false when typing
     ///   must stay in the editor (slash menu).
-    func show<Content: View>(_ content: Content, below anchor: NSRect, in parent: NSWindow, acceptsKey: Bool) {
+    /// - centered: center horizontally on the anchor (tooltips) instead of aligning leading edges.
+    /// - preferAbove: open above the anchor when there is room.
+    /// - passesClicksThrough: the panel ignores the mouse (tooltips).
+    func show<Content: View>(_ content: Content, below anchor: NSRect, in parent: NSWindow, acceptsKey: Bool,
+                             centered: Bool = false, preferAbove: Bool = false, passesClicksThrough: Bool = false) {
         close()
+        self.centered = centered
+        self.preferAbove = preferAbove
         let panel = FloatingPanel(acceptsKey: acceptsKey)
+        panel.ignoresMouseEvents = passesClicksThrough
         // The window follows the content's size (e.g. a filtering slash menu).
         let host = NSHostingController(rootView: content.padding(Self.margin))
         host.sizingOptions = .preferredContentSize
@@ -83,13 +94,18 @@ final class FloatingPanelController {
         if let panel { position(panel) }
     }
 
-    /// Below the anchor (content's top-left aligned with it); above if there's no room.
+    /// Below the anchor (or above when preferred); flips when there's no room.
     private func position(_ panel: NSPanel) {
         let size = panel.frame.size
         let screen = parent?.screen?.visibleFrame ?? panel.screen?.visibleFrame ?? .infinite
-        var origin = NSPoint(x: anchor.minX - Self.margin, y: anchor.minY - size.height + Self.margin - 4)
-        if origin.y < screen.minY { origin.y = anchor.maxY - Self.margin + 4 }
-        origin.x = min(max(origin.x, screen.minX), screen.maxX - size.width)
+        let below = anchor.minY - size.height + Self.margin - 4
+        let above = anchor.maxY - Self.margin + 4
+        var y = preferAbove ? above : below
+        if preferAbove, y + size.height > screen.maxY { y = below }
+        if !preferAbove, y < screen.minY { y = above }
+        var x = centered ? anchor.midX - size.width / 2 : anchor.minX - Self.margin
+        x = min(max(x, screen.minX), screen.maxX - size.width)
+        let origin = NSPoint(x: x, y: y)
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
     }
 
@@ -215,7 +231,7 @@ struct SNMenuList: View {
                 } else {
                     if let icon = item.icon {
                         Image(systemName: icon).font(.system(size: 12, weight: .medium)).frame(width: 18)
-                            .jiggle(on: isHighlighted)
+                            .iconMotion(for: icon, on: isHighlighted)
                     }
                     Text(item.title).font(.system(size: 13, weight: .medium))
                 }

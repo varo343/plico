@@ -24,6 +24,7 @@ private struct SNIconButtonBody: View {
     let shape: SNHighlightShape
     let size: CGSize
     @State private var isHovered = false
+    @State private var pulse = 0
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
@@ -34,7 +35,11 @@ private struct SNIconButtonBody: View {
             .contentShape(Rectangle())
             .snPressEffect(configuration.isPressed, scale: 0.9)
             .snAnimation(SNMotion.hover, value: isHovered)
-            .onHover { isHovered = $0 && isEnabled }
+            .environment(\.snHoverPulse, pulse)
+            .onHover { inside in
+                isHovered = inside && isEnabled
+                if inside { pulse += 1 }
+            }
     }
 
     private var fill: Color {
@@ -46,9 +51,11 @@ private struct SNIconButtonBody: View {
 
     @ViewBuilder
     private var highlight: some View {
+        // Hand-drawn hover/active shapes (cartoon), still following the
+        // container's curve (rounded vs capsule).
         switch shape {
-        case .rounded(let radius): RoundedRectangle(cornerRadius: radius).fill(fill)
-        case .capsule: Capsule().fill(fill)
+        case .rounded(let radius): WobblyRoundedRectShape(radius: radius).fill(fill)
+        case .capsule: WobblyCapsuleShape(variant: 1, amplitude: 1.6).fill(fill)
         }
     }
 }
@@ -66,6 +73,7 @@ private struct SNCapsuleButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let isDestructive: Bool
     @State private var isHovered = false
+    @State private var pulse = 0
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
@@ -76,59 +84,73 @@ private struct SNCapsuleButtonBody: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                Capsule().fill(configuration.isPressed ? SNColor.borderSubtle
+                WobblyCapsuleShape(variant: 2, amplitude: isHovered ? 1.8 : 1).fill(configuration.isPressed ? SNColor.borderSubtle
                     : (isHovered ? (isDestructive ? SNColor.accentCoral : SNColor.borderSubtle.opacity(0.6)) : SNColor.card))
             )
-            .overlay(Capsule().strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+            .overlay(WobblyCapsuleShape(variant: 2, amplitude: isHovered ? 1.8 : 1).stroke(SNColor.borderSubtle, lineWidth: 1))
             .contentShape(Capsule())
             .opacity(isEnabled ? 1 : 0.55)
             .snPressEffect(configuration.isPressed)
             .snAnimation(SNMotion.hover, value: isHovered)
-            .onHover { isHovered = $0 && isEnabled }
+            .environment(\.snHoverPulse, pulse)
+            .onHover { inside in
+                isHovered = inside && isEnabled
+                if inside { pulse += 1 }
+            }
     }
 }
 
-/// Small label that appears next to a control on hover (faster and more
-/// legible than the system tooltip). Decorative for VoiceOver: controls carry
-/// their own accessibility label.
+/// Small label that appears next to a control on hover. Shown in its own
+/// floating panel so nothing in the window can cover or clip it.
+/// Decorative for VoiceOver: controls carry their own accessibility label.
 struct HoverLabel: ViewModifier {
     let text: String
     var edge: Edge = .bottom
-    @State private var isShown = false
+    @State private var anchor = AnchorBox()
+    @State private var controller = FloatingPanelController()
     @State private var showTask: Task<Void, Never>?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
+            .background(AnchorReader(box: anchor))
             .onHover { hovering in
                 showTask?.cancel()
                 if hovering {
                     showTask = Task {
-                        try? await Task.sleep(for: .milliseconds(250))
-                        if !Task.isCancelled { isShown = true }
+                        try? await Task.sleep(for: .milliseconds(350))
+                        if !Task.isCancelled { show() }
                     }
                 } else {
-                    isShown = false
+                    controller.close()
                 }
             }
-            .overlay(alignment: edge == .bottom ? .bottom : .top) {
-                if isShown {
-                    Text(text)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(SNColor.textPrimary)
-                        .fixedSize()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(SNColor.card, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(SNColor.borderSubtle, lineWidth: 1))
-                        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
-                        .offset(y: edge == .bottom ? 30 : -30)
-                        .transition(reduceMotion ? .identity : .opacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
+            .onDisappear {
+                showTask?.cancel()
+                controller.close()
             }
-            .animation(.easeOut(duration: 0.12), value: isShown)
+    }
+
+    private func show() {
+        guard let window = anchor.view?.window, let rect = anchor.screenRect, window.isVisible else { return }
+        controller.show(TooltipBubble(text: text), below: rect, in: window, acceptsKey: false,
+                        centered: true, preferAbove: edge == .top, passesClicksThrough: true)
+    }
+}
+
+private struct TooltipBubble: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(SNColor.textPrimary)
+            .fixedSize()
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(WobblyRoundedRectShape(radius: 8, variant: 2).fill(SNColor.card))
+            .overlay(WobblyRoundedRectShape(radius: 8, variant: 2).stroke(SNColor.borderSubtle, lineWidth: 1))
+            .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
+            .modifier(PopIn())
     }
 }
 

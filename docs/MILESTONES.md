@@ -207,6 +207,22 @@ button; hover the switcher icons; drag the list edge; ⌃⌘S; ⌘,.
 **Manual checks pending:** hover a note row and use its ⋯; select text and check the top formatting bar;
 narrow the window to see the compact bar; click around to feel the press/slide animations.
 
+## Design iteration 5 (your feedback, Oct 17) ✅ automated · 🟡 manual checks pending
+- ✅ Section switcher replaces the section titles ("Notes", "Today"…); section controls on its right
+  (sort for Notes, Empty for Trash)
+- ✅ Hiding/showing the list is a smooth spring: the column slides, the note card grows
+- ✅ Meaning-based icon motions (`IconMotion`): trash swings, pin drops, sun/gear spin, envelope lifts,
+  calendar flips, flags wave, sort arrows turn, lists slide, links wiggle, text styles pulse, warnings
+  shake. Played on hover of the whole control (menus, formatting bar, metadata row, toolbar), and on
+  selection in the switcher. All off with Reduce Motion.
+- ✅ Hand-drawn hover shapes (wobbly rounded rects / capsules) and stronger irregular tag backgrounds
+- ✅ **Fixed: tooltips could be covered or clipped** by other views. They now live in their own
+  click-through floating panels, centered on the control (placement tests added)
+- ✅ 191 tests (2 consecutive runs)
+
+**Manual checks pending:** hover icons in menus, formatting bar and metadata row; toggle the list
+(⌃⌘S or the card button); hover anything with a tooltip near the window edges.
+
 ## Spec acceptance items already covered by M0 tests
 - Formatting persists across relaunch (on-disk container reopen test)
 - Duplicate: new IDs, original unaffected

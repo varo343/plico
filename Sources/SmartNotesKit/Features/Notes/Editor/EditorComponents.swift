@@ -158,7 +158,7 @@ struct NoteEditorToolbar: View {
     }
 
     private func icon(_ symbol: String) -> some View {
-        Image(systemName: symbol).font(.system(size: 12.5, weight: .semibold))
+        MotionIcon(symbol: symbol, size: 12.5, weight: .semibold)
     }
 
     private func markButton(_ mark: InlineMark, symbol: String, label: String, shortcut: String?) -> some View {

@@ -46,6 +46,8 @@ public struct OrganicPillShape: Shape {
 /// `variant` picks one of a few fixed wobbles (never random).
 public struct WobblyCapsuleShape: Shape {
     var variant: Int = 0
+    /// Scales the irregularity (1 = subtle, 2 = clearly hand-drawn).
+    var amplitude: CGFloat = 1
 
     public func path(in rect: CGRect) -> Path {
         // Fixed per-variant offsets (in points), small enough to stay legible.
@@ -55,27 +57,54 @@ public struct WobblyCapsuleShape: Shape {
             [-0.4, 0.4, 1.0, -0.7, 0.2, 0.9],
             [0.9, -0.3, 0.6, 0.5, -0.8, 0.2],
         ]
-        let w = wobbles[abs(variant) % wobbles.count]
+        let w = wobbles[abs(variant) % wobbles.count].map { $0 * amplitude }
+        let a = amplitude
         let minX = rect.minX, maxX = rect.maxX, minY = rect.minY, maxY = rect.maxY
         let r = rect.height / 2
         var path = Path()
         path.move(to: CGPoint(x: minX + r * 0.95, y: minY + w[0] * 0.6))
         // Top edge, gently bowed.
         path.addCurve(to: CGPoint(x: maxX - r * 1.05, y: minY + w[1] * 0.5),
-                      control1: CGPoint(x: minX + rect.width * 0.35, y: minY - 0.9 + w[2] * 0.4),
-                      control2: CGPoint(x: minX + rect.width * 0.7, y: minY + 0.5 + w[3] * 0.4))
+                      control1: CGPoint(x: minX + rect.width * 0.35, y: minY - 0.9 * a + w[2] * 0.4),
+                      control2: CGPoint(x: minX + rect.width * 0.7, y: minY + 0.5 * a + w[3] * 0.4))
         // Right end, a bit squarer than a true semicircle.
         path.addCurve(to: CGPoint(x: maxX - r * 0.9, y: maxY - 0.3 + w[4] * 0.4),
-                      control1: CGPoint(x: maxX + 0.9 + w[3] * 0.4, y: minY + r * 0.15),
-                      control2: CGPoint(x: maxX + 0.4, y: maxY - r * 0.05))
+                      control1: CGPoint(x: maxX + 0.9 * a + w[3] * 0.4, y: minY + r * 0.15),
+                      control2: CGPoint(x: maxX + 0.4 * a, y: maxY - r * 0.05))
         // Bottom edge.
         path.addCurve(to: CGPoint(x: minX + r * 1.1, y: maxY + w[5] * 0.5),
-                      control1: CGPoint(x: minX + rect.width * 0.62, y: maxY + 0.8),
-                      control2: CGPoint(x: minX + rect.width * 0.3, y: maxY - 0.4 + w[0] * 0.3))
+                      control1: CGPoint(x: minX + rect.width * 0.62, y: maxY + 0.8 * a),
+                      control2: CGPoint(x: minX + rect.width * 0.3, y: maxY - 0.4 * a + w[0] * 0.3))
         // Left end.
         path.addCurve(to: CGPoint(x: minX + r * 0.95, y: minY + w[0] * 0.6),
-                      control1: CGPoint(x: minX - 0.8 + w[1] * 0.4, y: maxY - r * 0.1),
-                      control2: CGPoint(x: minX - 0.3, y: minY + r * 0.1))
+                      control1: CGPoint(x: minX - 0.8 * a + w[1] * 0.4, y: maxY - r * 0.1),
+                      control2: CGPoint(x: minX - 0.3 * a, y: minY + r * 0.1))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Hand-drawn rounded rectangle for icon-button hovers: slightly uneven
+/// corners and edges, fixed per `variant`.
+public struct WobblyRoundedRectShape: Shape {
+    var radius: CGFloat
+    var variant: Int = 0
+
+    public func path(in rect: CGRect) -> Path {
+        let offsets: [[CGFloat]] = [[0.8, -0.6, 0.5, -0.4], [-0.5, 0.7, -0.3, 0.6], [0.4, 0.3, -0.7, -0.5]]
+        let o = offsets[abs(variant) % offsets.count]
+        let r = min(radius, rect.height / 2, rect.width / 2)
+        let (x0, y0, x1, y1) = (rect.minX, rect.minY, rect.maxX, rect.maxY)
+        var path = Path()
+        path.move(to: CGPoint(x: x0 + r, y: y0 + o[0] * 0.5))
+        path.addQuadCurve(to: CGPoint(x: x1 - r, y: y0 + o[1] * 0.5), control: CGPoint(x: rect.midX, y: y0 - 0.8 + o[2] * 0.4))
+        path.addQuadCurve(to: CGPoint(x: x1 + o[3] * 0.4, y: y0 + r), control: CGPoint(x: x1 + 0.3, y: y0 - 0.2))
+        path.addQuadCurve(to: CGPoint(x: x1 + o[0] * 0.4, y: y1 - r), control: CGPoint(x: x1 + 0.9, y: rect.midY + o[1]))
+        path.addQuadCurve(to: CGPoint(x: x1 - r, y: y1 + o[2] * 0.4), control: CGPoint(x: x1 + 0.2, y: y1 + 0.3))
+        path.addQuadCurve(to: CGPoint(x: x0 + r, y: y1 + o[3] * 0.5), control: CGPoint(x: rect.midX, y: y1 + 0.9 + o[0] * 0.3))
+        path.addQuadCurve(to: CGPoint(x: x0 + o[1] * 0.4, y: y1 - r), control: CGPoint(x: x0 - 0.3, y: y1 + 0.2))
+        path.addQuadCurve(to: CGPoint(x: x0 + o[2] * 0.4, y: y0 + r), control: CGPoint(x: x0 - 0.9, y: rect.midY + o[3]))
+        path.addQuadCurve(to: CGPoint(x: x0 + r, y: y0 + o[0] * 0.5), control: CGPoint(x: x0 - 0.2, y: y0 - 0.3))
         path.closeSubpath()
         return path
     }

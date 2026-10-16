@@ -162,6 +162,7 @@ private struct QuickRow: View {
         Button(action: action) {
             HStack(spacing: SNSpacing.xs) {
                 Image(systemName: icon).font(.system(size: 12)).frame(width: 18)
+                    .iconMotion(for: icon, on: isHovered)
                 Text(title).font(.system(size: 13, weight: .medium))
                 Spacer()
                 if let trailing {

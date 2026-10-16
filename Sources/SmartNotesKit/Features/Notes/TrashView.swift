@@ -4,24 +4,9 @@ import SwiftUI
 struct TrashView: View {
     let model: NotesModel
     @State private var pendingDelete: NoteSummary?
-    @State private var confirmEmpty = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Trash").font(.system(size: 22, weight: .bold)).foregroundStyle(SNColor.textPrimary)
-                Text("\(model.trashed.count)")
-                    .font(.system(size: 13, weight: .medium).monospacedDigit())
-                    .foregroundStyle(SNColor.textSecondary)
-                Spacer()
-                Button("Empty Trash…") { confirmEmpty = true }
-                    .buttonStyle(SNCapsuleButtonStyle(isDestructive: true))
-                    .disabled(model.trashed.isEmpty)
-            }
-            .padding(.horizontal, SNSpacing.m)
-            .padding(.top, SNSpacing.xs)
-            .padding(.bottom, SNSpacing.s)
-
             if model.trashed.isEmpty {
                 EmptyState(symbol: "trash", tint: SNColor.borderSubtle, title: "Trash is empty",
                            message: "Deleted notes wait here until you empty the Trash. Nothing is removed automatically.")
@@ -44,14 +29,6 @@ struct TrashView: View {
         ) {
             if let note = pendingDelete { model.deletePermanently(note.id) }
             pendingDelete = nil
-        }
-        .confirmDestructiveAction(
-            "Empty Trash?",
-            isPresented: $confirmEmpty,
-            message: "\(model.trashed.count) note(s) will be deleted permanently. This can't be undone.",
-            actionTitle: "Empty Trash"
-        ) {
-            model.emptyTrash()
         }
     }
 }
@@ -76,11 +53,14 @@ private struct TrashRow: View {
                 }
                 Spacer()
                 Button(action: restore) {
-                    Label("Restore", systemImage: "arrow.uturn.backward")
+                    HStack(spacing: 4) {
+                        MotionIcon(symbol: "arrow.uturn.backward", size: 11, weight: .semibold)
+                        Text("Restore")
+                    }
                 }
                 .buttonStyle(SNCapsuleButtonStyle())
                 Button(action: delete) {
-                    Image(systemName: "xmark.bin").font(.system(size: 12))
+                    MotionIcon(symbol: "xmark.bin", size: 12)
                 }
                 .buttonStyle(SNIconButtonStyle(shape: .capsule))
                 .hoverLabel("Delete permanently…")
@@ -96,6 +76,32 @@ private struct TrashRow: View {
         .contextMenu {
             Button("Restore", action: restore)
             Button("Delete Permanently…", role: .destructive, action: delete)
+        }
+    }
+}
+
+/// "Empty Trash…" in the header, with its confirmation.
+struct EmptyTrashButton: View {
+    let model: NotesModel
+    @State private var confirm = false
+
+    var body: some View {
+        Button { confirm = true } label: {
+            HStack(spacing: 4) {
+                MotionIcon(symbol: "trash", size: 11, weight: .semibold)
+                Text("Empty")
+            }
+        }
+        .buttonStyle(SNCapsuleButtonStyle(isDestructive: true))
+        .disabled(model.trashed.isEmpty)
+        .hoverLabel("Empty Trash: delete \(model.trashed.count) note(s) permanently")
+        .confirmDestructiveAction(
+            "Empty Trash?",
+            isPresented: $confirm,
+            message: "\(model.trashed.count) note(s) will be deleted permanently. This can't be undone.",
+            actionTitle: "Empty Trash"
+        ) {
+            model.emptyTrash()
         }
     }
 }
