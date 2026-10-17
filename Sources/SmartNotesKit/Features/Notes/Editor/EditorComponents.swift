@@ -267,9 +267,11 @@ struct BlockDragHandle: View {
     @State private var isHovered = false
 
     var body: some View {
-        Image(systemName: "circle.grid.2x3.fill")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(isHovered || isDragging ? SNColor.textPrimary : SNColor.textSecondary)
+        // Drawn, not an SF Symbol: the grid symbol doesn't exist on every macOS
+        // version and silently rendered nothing.
+        GripDots()
+            .fill(isHovered || isDragging ? SNColor.textPrimary : SNColor.textSecondary)
+            .frame(width: 8, height: 13)
             .frame(width: 20, height: max(height, 22))
             .background {
                 if isHovered || isDragging {
@@ -285,7 +287,6 @@ struct BlockDragHandle: View {
                 isHovered = inside
                 if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
             }
-            .hoverLabel("Drag to move · right-click for more")
             .contextMenu {
                 Button("Move Up", action: moveUp)
                 Button("Move Down", action: moveDown)
@@ -294,6 +295,22 @@ struct BlockDragHandle: View {
             .accessibilityLabel("Move block")
             .accessibilityAction(named: "Move Up", moveUp)
             .accessibilityAction(named: "Move Down", moveDown)
+    }
+}
+
+/// Two columns of three dots: the universal "grab here" grip.
+struct GripDots: Shape {
+    func path(in rect: CGRect) -> Path {
+        let d = min(rect.width / 2.6, rect.height / 4.4) // dot diameter
+        let columns = [rect.minX + d / 2, rect.maxX - d / 2]
+        let rows = [rect.minY + d / 2, rect.midY, rect.maxY - d / 2]
+        var path = Path()
+        for x in columns {
+            for y in rows {
+                path.addEllipse(in: CGRect(x: x - d / 2, y: y - d / 2, width: d, height: d))
+            }
+        }
+        return path
     }
 }
 
