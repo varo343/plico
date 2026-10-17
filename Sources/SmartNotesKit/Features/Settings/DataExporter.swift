@@ -12,10 +12,10 @@ public enum DataExporter {
     public static func export(_ notes: [Note], into parent: URL, now: Date = .now) throws -> Result {
         let stamp = now.formatted(.iso8601.year().month().day().dateSeparator(.dash)) + " " +
             now.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)).replacingOccurrences(of: ":", with: "")
-        var folder = parent.appendingPathComponent("Smart Notes Export \(stamp)", isDirectory: true)
+        var folder = parent.appendingPathComponent("Plico Export \(stamp)", isDirectory: true)
         var suffix = 2
         while FileManager.default.fileExists(atPath: folder.path) {
-            folder = parent.appendingPathComponent("Smart Notes Export \(stamp) \(suffix)", isDirectory: true)
+            folder = parent.appendingPathComponent("Plico Export \(stamp) \(suffix)", isDirectory: true)
             suffix += 1
         }
         let markdown = folder.appendingPathComponent("Markdown", isDirectory: true)

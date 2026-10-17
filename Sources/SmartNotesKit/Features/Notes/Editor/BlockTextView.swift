@@ -30,6 +30,8 @@ struct BlockTextActions {
     var onSlashMove: (Int) -> Void
     var onSlashConfirm: () -> Void
     var onSlashDismiss: () -> Void
+    /// Pointer entered/left the text (SwiftUI hover doesn't fire over an NSTextView).
+    var onHoverChange: (Bool) -> Void = { _ in }
 }
 
 /// One logical block's text, edited by a TextKit 1 NSTextView. Each block is
@@ -231,6 +233,28 @@ final class BlockNSTextView: NSTextView {
         focusRingType = .none
         insertionPointColor = NSColor(SNColor.textPrimary)
         setAccessibilityRole(.textArea)
+    }
+
+    // MARK: Hover
+
+    private var hoverArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        actions?.onHoverChange(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        actions?.onHoverChange(false)
     }
 
     var selectedUTF16Range: Range<Int> {

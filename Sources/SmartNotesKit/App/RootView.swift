@@ -307,7 +307,7 @@ public struct StartupFailureView: View {
     }
 
     public var body: some View {
-        EmptyState(symbol: "exclamationmark.triangle", title: "Smart Notes couldn't open your notes", message: message) {
+        EmptyState(symbol: "exclamationmark.triangle", title: "Plico couldn't open your notes", message: message) {
             Button("Try Again", action: retry)
                 .keyboardShortcut(.defaultAction)
         }

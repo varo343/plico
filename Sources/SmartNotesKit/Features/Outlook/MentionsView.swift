@@ -31,7 +31,7 @@ struct MentionsView: View {
                 }
             case .disconnected:
                 EmptyState(symbol: "envelope", tint: SNColor.accentMint, title: "Connect Outlook",
-                           message: "Show emails where someone @mentions you. Read-only: Smart Notes never changes your mailbox.") {
+                           message: "Show emails where someone @mentions you. Read-only. Plico never changes your mailbox.") {
                     Button("Connect Outlook") { Task { await outlook.connect() } }.buttonStyle(SNCapsuleButtonStyle())
                 }
             default:

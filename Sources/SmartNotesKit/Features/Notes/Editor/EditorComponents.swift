@@ -257,7 +257,9 @@ extension FontFamilyPreset {
 /// Grip shown on block hover: drag it to move the block. Right-click or
 /// VoiceOver actions offer Move Up / Move Down without dragging.
 struct BlockDragHandle: View {
-    let isVisible: Bool
+    enum Visibility { case hidden, hint, full }
+
+    let visibility: Visibility
     var isDragging = false
     let height: CGFloat
     let moveUp: () -> Void
@@ -275,9 +277,10 @@ struct BlockDragHandle: View {
                 }
             }
             .contentShape(Rectangle())
-            // Nearly (not fully) transparent when hidden: SwiftUI skips hit testing
-            // at opacity 0, and the grip must be grabbable as soon as the pointer is there.
-            .opacity(isVisible ? 1 : 0.001)
+            // Full on hover, a faint hint on the block being edited (so it's always
+            // discoverable), and nearly — not fully — transparent otherwise: SwiftUI
+            // skips hit testing at opacity 0, and the grip must stay grabbable.
+            .opacity(visibility == .full ? 1 : (visibility == .hint ? 0.35 : 0.001))
             .onHover { inside in
                 isHovered = inside
                 if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
@@ -287,7 +290,7 @@ struct BlockDragHandle: View {
                 Button("Move Up", action: moveUp)
                 Button("Move Down", action: moveDown)
             }
-            .snAnimation(SNMotion.hover, value: isVisible)
+            .snAnimation(SNMotion.hover, value: visibility)
             .accessibilityLabel("Move block")
             .accessibilityAction(named: "Move Up", moveUp)
             .accessibilityAction(named: "Move Down", moveDown)

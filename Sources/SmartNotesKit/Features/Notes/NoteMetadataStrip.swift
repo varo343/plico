@@ -16,7 +16,7 @@ struct NoteMetadataStrip: View {
     }
 
     private func metadata(_ summary: NoteSummary) -> some View {
-        FlowLayout(spacing: SNSpacing.xs) {
+        FlowLayout(spacing: SNSpacing.xxs) {
             PriorityField(priority: summary.priority) { notes.setPriority($0, for: noteID) }
             DateField(kind: .planned, day: summary.plannedDate, today: today) { notes.setPlannedDate($0, for: noteID) }
             DateField(kind: .due, day: summary.dueDate, today: today) { notes.setDueDate($0, for: noteID) }
@@ -38,7 +38,7 @@ private struct PriorityField: View {
     let change: (Priority) -> Void
 
     var body: some View {
-        SNDropdown(minWidth: 170, shape: .capsule, showsChevron: false) {
+        SNDropdown(minWidth: 170, shape: .capsule, showsChevron: false, labelPadding: 10) {
             [.header("Priority")] + Priority.allCases.map { option in
                 .item(SNMenuItem(
                     title: option.label,
@@ -88,7 +88,7 @@ private struct DateField: View {
                     .foregroundStyle(SNColor.textSecondary)
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 10)
         } panel: { dismiss in
             DatePickerPanel(title: "\(title) date", explanation: explanation, selected: day, today: today,
                             change: change, dismiss: dismiss)
@@ -119,8 +119,8 @@ private struct MetadataButtonBody: View {
             .labelStyle(.titleAndIcon)
             .font(.system(size: 12))
             .foregroundStyle(isSet ? SNColor.textPrimary : SNColor.textSecondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
             .background {
                 if isHovered { WobblyCapsuleShape(variant: 3, amplitude: 1.8).fill(SNColor.borderSubtle.opacity(0.55)) }
             }

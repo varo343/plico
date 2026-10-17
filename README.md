@@ -1,4 +1,6 @@
-# Smart Notes
+# Plico
+
+_Formerly "Smart Notes". The bundle ID and data location keep the old name so existing notes carry over._
 
 A native, local-first macOS note-taking app (SwiftUI + SwiftData). Specs:
 `Smart_Notes_Technical_Spec.md` (architecture, data, security) and
@@ -15,9 +17,10 @@ A native, local-first macOS note-taking app (SwiftUI + SwiftData). Specs:
 ## Build, run, test
 ```sh
 swift test                       # unit + integration tests
-scripts/build-app.sh             # → build/Smart Notes.app (release, ad-hoc signed)
-open "build/Smart Notes.app"     # real notes store
-open -n "build/Smart Notes.app" --args --sample-data   # demo data, in-memory only
+scripts/build-app.sh             # → build/Plico.app (release, ad-hoc signed, with icon)
+scripts/make-icon.sh             # regenerate Resources/AppIcon.icns from the PlicoLogo view
+open build/Plico.app             # real notes store
+open -n build/Plico.app --args --sample-data   # demo data, in-memory only
 ```
 You can also open `Package.swift` in Xcode and run the `SmartNotes` scheme.
 

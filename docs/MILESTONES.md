@@ -249,6 +249,16 @@ narrow the window to see the compact bar; click around to feel the press/slide a
 - ⚠️ Synthetic mouse events don't reach SwiftUI in the test runner, so the real drag needs a manual check
 - ⚠️ Note-list reordering still uses system drag-and-drop (unverified by hand)
 
+## Plico (Oct 17)
+- ✅ Renamed to **Plico** everywhere visible (window, menus, Dock, exports, texts). Bundle ID and data
+  location unchanged on purpose, so existing notes and settings carry over.
+- ✅ Logo: envelope ("plico") with a note on the yellow cartoon blob. Drawn once as `PlicoLogo`;
+  the macOS icon (`Resources/AppIcon.icns`, all sizes) is generated from it by `scripts/make-icon.sh`.
+  Also shown on first launch.
+- ✅ Roomier hover shapes in the note's metadata row
+- ✅ Fixed: the drag grip barely ever appeared (SwiftUI hover doesn't fire over the AppKit text view).
+  The text now reports hover itself, and the grip is faintly visible on the block being edited.
+
 ## Spec acceptance items already covered by M0 tests
 - Formatting persists across relaunch (on-disk container reopen test)
 - Duplicate: new IDs, original unaffected

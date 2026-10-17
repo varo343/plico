@@ -16,7 +16,7 @@ public enum SampleData {
         }
 
         let welcome = Note(
-            title: "Welcome to Smart Notes",
+            title: "Welcome to Plico",
             createdAt: now.addingTimeInterval(-86_400 * 3),
             updatedAt: now.addingTimeInterval(-3_600),
             isPinned: true,

@@ -20,8 +20,15 @@ struct NotesListView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if !model.hasAnyNotes {
-                EmptyState(symbol: "square.and.pencil", tint: SNColor.accentMint, title: "Write your first note",
-                           message: "Click the yellow + button or press ⌘N.")
+                // First launch: Plico's logo welcomes you.
+                VStack(spacing: SNSpacing.s) {
+                    PlicoLogo(size: 92)
+                    Text("Welcome to Plico").font(SNFont.section).foregroundStyle(SNColor.textPrimary)
+                    Text("Write your first note: click the yellow + button or press ⌘N.")
+                        .font(SNFont.secondary).foregroundStyle(SNColor.textSecondary)
+                        .multilineTextAlignment(.center).frame(maxWidth: 260)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.groups.all.isEmpty {
                 EmptyState(symbol: "magnifyingglass", tint: SNColor.borderSubtle, title: "No matches",
                            message: "Nothing in your notes contains “\(model.searchQuery)”. Trash isn't searched.") {

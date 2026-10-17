@@ -60,7 +60,7 @@ public final class AppModel {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.prompt = "Export Here"
-        panel.message = "Choose where to save the Smart Notes export."
+        panel.message = "Choose where to save the Plico export."
         guard panel.runModal() == .OK, let parent = panel.url else { return }
         do {
             let result = try DataExporter.export(try dependencies.notes.allNotes(), into: parent)

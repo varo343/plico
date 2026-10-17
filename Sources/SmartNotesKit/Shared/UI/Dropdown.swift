@@ -278,6 +278,8 @@ struct SNDropdown<Label: View>: View {
     var shape: SNHighlightShape = .rounded(8)
     /// Text triggers show a chevron; icon-only triggers usually don't.
     var showsChevron = true
+    /// Extra room around text labels so hover shapes don't hug the text.
+    var labelPadding: CGFloat = 0
     var onOpenChange: (Bool) -> Void = { _ in }
     let entries: () -> [SNMenuEntry]
     @ViewBuilder let label: () -> Label
@@ -295,7 +297,7 @@ struct SNDropdown<Label: View>: View {
                         .foregroundStyle(SNColor.textSecondary)
                 }
             }
-            .padding(.horizontal, showsChevron ? 6 : 0)
+            .padding(.horizontal, showsChevron ? max(6, labelPadding) : labelPadding)
         }
         .buttonStyle(SNIconButtonStyle(isActive: isOpen, shape: shape))
         .background(AnchorReader(box: anchor))

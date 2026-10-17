@@ -9,7 +9,7 @@ struct SmartNotesApp: App {
 
     var body: some Scene {
         // Single window: one editing session per note, no cross-window conflicts.
-        Window("Smart Notes", id: "main") {
+        Window("Plico", id: "main") {
             switch launch.result {
             case .success(let app):
                 RootView(app: app)

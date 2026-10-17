@@ -152,7 +152,9 @@ private struct BlockRow: View {
     let dropTarget: DropTarget?
     let onDragChanged: (DragGesture.Value) -> Void
     let onDragEnded: () -> Void
+    /// Pointer over the row's SwiftUI parts (grip, gutter) or over its text.
     @State private var isHovered = false
+    @State private var isTextHovered = false
 
     private static let indentWidth: CGFloat = 22
     private static let gutterWidth: CGFloat = 24
@@ -166,7 +168,7 @@ private struct BlockRow: View {
         let style = BlockTextStyle(type: block.type, defaults: defaults, isChecked: block.isChecked)
         HStack(alignment: .top, spacing: 6) {
             BlockDragHandle(
-                isVisible: isHovered || isDragged,
+                visibility: isHovered || isTextHovered || isDragged ? .full : (model.activeBlockID == block.id ? .hint : .hidden),
                 isDragging: isDragged,
                 height: style.lineHeight,
                 moveUp: { model.moveBlock(block.id, by: -1) },
@@ -240,7 +242,8 @@ private struct BlockRow: View {
             isSlashMenuOpen: { [model] in model.slashMenu?.blockID == id },
             onSlashMove: { [model] in model.moveSlashHighlight(by: $0) },
             onSlashConfirm: { [model] in model.applySlashCommand() },
-            onSlashDismiss: { [model] in model.dismissSlashMenu() }
+            onSlashDismiss: { [model] in model.dismissSlashMenu() },
+            onHoverChange: { isTextHovered = $0 }
         )
     }
 

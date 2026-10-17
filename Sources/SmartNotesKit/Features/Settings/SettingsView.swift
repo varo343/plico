@@ -413,7 +413,7 @@ struct OutlookSettings: View {
                             title: outlook.account?.address ?? "Not connected",
                             subtitle: outlook.account == nil
                                 ? (outlook.configuration.isComplete ? "Ready to connect." : "Add your app registration below first.")
-                                : "Read-only. Smart Notes never sends, deletes or changes email.") {
+                                : "Read-only. Plico never sends, deletes or changes email.") {
                     if outlook.account == nil {
                         Button(outlook.status == .connecting ? "Connecting…" : "Connect") { Task { await outlook.connect() } }
                             .buttonStyle(SNCapsuleButtonStyle())
@@ -501,7 +501,7 @@ private struct LabeledField: View {
 
 private struct SetupSteps: View {
     private let steps = [
-        "Open Microsoft Entra ▸ App registrations ▸ New registration. Name it \"Smart Notes\".",
+        "Open Microsoft Entra ▸ App registrations ▸ New registration. Name it \"Plico\".",
         "Supported account types: pick what you use (work, personal, or both).",
         "Redirect URI: platform \"Public client/native (mobile & desktop)\", value smartnotes://auth.",
         "API permissions ▸ Microsoft Graph ▸ Delegated: User.Read, Mail.Read, offline_access.",
