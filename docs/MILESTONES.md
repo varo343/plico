@@ -107,9 +107,27 @@ Cards have no completion controls, per the UX spec.
 **Known limitations:** metadata changes are not part of the editor's ⌘Z history (they are explicit,
 single-click actions and easy to reverse in the strip).
 
-## Milestone 4 — Outlook ⏸ skipped for now (at your request)
-Mentions shows an honest "Outlook isn't set up" state. Domain model, persistence and dedupe for
-Outlook items already exist (M0) and are tested; sign-in, Graph fetch and the Mentions UI are not built.
+## Milestone 4 — Outlook ✅ built and tested with fakes · ⏳ needs your Microsoft app registration
+- ✅ Sign-in: OAuth 2.0 authorization code + PKCE (RFC 7636 vector tested) in the system browser
+  (`ASWebAuthenticationSession`); `state` checked; no client secret; tokens only in the Keychain
+  (this device only, after first unlock), refreshed automatically
+- ✅ Scopes: `offline_access User.Read Mail.Read` (read-only; nothing is ever sent, deleted, moved or marked read)
+- ✅ "Mentions of me" (default, your request): `GET /beta/me/mailFolders/inbox/messages?$filter=mentionsPreview/isMentioned eq true`.
+  **Graph beta only**: Microsoft documents `mentionsPreview` as beta ("not supported in production").
+  Stable fallbacks: Flagged and All inbox (v1.0).
+- ✅ Graph client: immutable IDs, paging, 429 with Retry-After, 5xx exponential backoff, 401/403/offline mapping
+- ✅ Sync: dedupe on (provider, account, message ID), local dismiss/seen kept, items that stop matching are
+  removed when the list is complete, refresh on launch, on app activation and on demand; offline keeps saved emails
+- ✅ Mentions UI: status line ("From … · updated …"), reconnect/retry banners, email cards, filter + refresh,
+  detail with Create Note (subject, sender, link back to Outlook, preview quote), Open in Outlook, Dismiss
+- ✅ Settings ▸ Outlook: connection, what to show, client ID / tenant, redirect URI with Copy, setup steps
+- ✅ Sample emails while not configured (in memory only, never stored)
+- ✅ Disconnect: removes tokens; optionally the saved emails; notes are never touched. Delete All also disconnects.
+- ✅ 23 new tests (OAuth, Graph client, sync flow with fake browser + network)
+
+**To finish (you):** create the app registration (Settings ▸ Outlook shows the 5 steps), paste the client ID,
+press Connect. Real sign-in and real mailbox data have **not** been tested yet: they need your account.
+
 ## Milestone 5 — Polish, export, recovery ✅ (automated) · 🟡 manual checks pending
 **UI redesign** (against the UX spec):
 - ✅ Window: unified toolbar without a title; each column's warm surface runs up under the title bar
@@ -222,6 +240,14 @@ narrow the window to see the compact bar; click around to feel the press/slide a
 
 **Manual checks pending:** hover icons in menus, formatting bar and metadata row; toggle the list
 (⌃⌘S or the card button); hover anything with a tooltip near the window edges.
+
+## Block drag rework (Oct 17)
+- ✅ Blocks reorder with an in-window drag (no system drag-and-drop): grab the grip, the block lifts and
+  follows the pointer, an insertion line shows the landing spot, release moves it (⌘Z undoes it)
+- ✅ Landing logic (`DropResolver`) unit-tested; the move itself tested at model level
+- ✅ Fixed: the invisible position helpers behind menus/tooltips intercepted clicks (`PassthroughView`)
+- ⚠️ Synthetic mouse events don't reach SwiftUI in the test runner, so the real drag needs a manual check
+- ⚠️ Note-list reordering still uses system drag-and-drop (unverified by hand)
 
 ## Spec acceptance items already covered by M0 tests
 - Formatting persists across relaunch (on-disk container reopen test)

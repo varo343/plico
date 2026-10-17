@@ -424,4 +424,3 @@ final class EditorHarness {
         #expect(h.plainBlocks == ["Task /checkbox "])
     }
 }
-

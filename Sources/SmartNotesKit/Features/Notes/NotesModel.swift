@@ -129,6 +129,16 @@ public final class NotesModel {
         editor?.focusFirstBlock()
     }
 
+    /// Saves a prepared note (e.g. created from an email) and opens it.
+    public func addNote(_ note: Note) {
+        flush()
+        searchQuery = ""
+        perform("create the note") { try repository.save(note) }
+        reload()
+        select(note.id)
+        editor?.focusLastBlockEnd()
+    }
+
     public func duplicate(_ id: UUID) {
         flush()
         perform("duplicate the note") {

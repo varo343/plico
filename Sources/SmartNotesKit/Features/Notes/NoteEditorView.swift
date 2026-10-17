@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Title + block body for one note. Minimal chrome; writing comes first.
 struct NoteEditorView: View {
@@ -8,8 +7,9 @@ struct NoteEditorView: View {
     /// Supplies the metadata strip; nil hides it (e.g. in tests).
     var notes: NotesModel?
     var defaults = EditorDefaults()
-    @State private var draggingBlockID: UUID?
+    @State private var drag: BlockDrag?
     @State private var dropTarget: DropTarget?
+    @State private var blockFrames: [UUID: CGRect] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,11 +44,20 @@ struct NoteEditorView: View {
                                 defaults: defaults,
                                 focusRequest: model.focusRequest,
                                 model: model,
-                                draggingBlockID: $draggingBlockID,
-                                dropTarget: $dropTarget
+                                drag: drag,
+                                dropTarget: dropTarget,
+                                onDragChanged: { dragChanged(block.id, $0) },
+                                onDragEnded: { dragEnded(block.id) }
                             )
+                            .background(GeometryReader { proxy in
+                                Color.clear.preference(key: BlockFramesKey.self, value: [block.id: proxy.frame(in: .named(Self.blocksSpace))])
+                            })
+                            .zIndex(drag?.blockID == block.id ? 1 : 0)
                         }
                     }
+                    .coordinateSpace(name: Self.blocksSpace)
+                    .onPreferenceChange(BlockFramesKey.self) { blockFrames = $0 }
+                    .snAnimation(SNMotion.snappy, value: model.note.blocks.map(\.id))
 
                     // Clicking below the last block continues writing there. Its height
                     // also lets the last line scroll clear of the New Note button.
@@ -68,6 +77,32 @@ struct NoteEditorView: View {
         .sheet(isPresented: Binding(get: { model.linkDraft != nil }, set: { if !$0 { model.cancelLinkEditing() } })) {
             LinkEditorSheet(model: model)
         }
+    }
+
+    // MARK: Block drag
+
+    private static let blocksSpace = "SmartNotes.blocks"
+
+    private func dragChanged(_ id: UUID, _ value: DragGesture.Value) {
+        if drag?.blockID != id {
+            drag = BlockDrag(blockID: id, startY: value.startLocation.y, currentY: value.location.y)
+            NSCursor.closedHand.push()
+        } else {
+            drag?.currentY = value.location.y
+        }
+        let ordered = model.note.blocks.compactMap { block in blockFrames[block.id].map { (id: block.id, frame: $0) } }
+        let target = DropResolver.target(pointerY: value.location.y, frames: ordered, dragged: id)
+        let newTarget = target.map { DropTarget(itemID: $0.id, placeAfter: $0.placeAfter) }
+        if newTarget != dropTarget { dropTarget = newTarget }
+    }
+
+    private func dragEnded(_ id: UUID) {
+        if let target = dropTarget {
+            model.moveBlock(id, relativeTo: target.itemID, placeAfter: target.placeAfter)
+        }
+        drag = nil
+        dropTarget = nil
+        NSCursor.pop()
     }
 
     /// 1-based numbers for consecutive numbered items at the same indent.
@@ -92,46 +127,56 @@ struct DropTarget: Equatable {
     var placeAfter: Bool
 }
 
+/// The block being dragged and how far the pointer has moved.
+struct BlockDrag: Equatable {
+    var blockID: UUID
+    var startY: CGFloat
+    var currentY: CGFloat
+    var offset: CGFloat { currentY - startY }
+}
+
+private struct BlockFramesKey: PreferenceKey {
+    static let defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
 private struct BlockRow: View {
     let block: NoteBlock
     let number: Int?
     let defaults: EditorDefaults
     let focusRequest: FocusRequest?
     let model: NoteEditorModel
-    @Binding var draggingBlockID: UUID?
-    @Binding var dropTarget: DropTarget?
+    let drag: BlockDrag?
+    let dropTarget: DropTarget?
+    let onDragChanged: (DragGesture.Value) -> Void
+    let onDragEnded: () -> Void
     @State private var isHovered = false
-    @State private var rowHeight: CGFloat = 0
 
     private static let indentWidth: CGFloat = 22
     private static let gutterWidth: CGFloat = 24
-    /// Handle (18) + spacing (6) live in the editor's left margin, so block text
+    /// Handle (20) + spacing (6) live in the editor's left margin, so block text
     /// stays aligned with the title and nothing shifts when the handle appears.
-    private static let handleSpace: CGFloat = 24
+    private static let handleSpace: CGFloat = 26
+
+    private var isDragged: Bool { drag?.blockID == block.id }
 
     var body: some View {
         let style = BlockTextStyle(type: block.type, defaults: defaults, isChecked: block.isChecked)
         HStack(alignment: .top, spacing: 6) {
             BlockDragHandle(
-                isVisible: isHovered,
+                isVisible: isHovered || isDragged,
+                isDragging: isDragged,
                 height: style.lineHeight,
                 moveUp: { model.moveBlock(block.id, by: -1) },
                 moveDown: { model.moveBlock(block.id, by: 1) }
             )
-            .onDrag {
-                draggingBlockID = block.id
-                let provider = NSItemProvider()
-                provider.registerDataRepresentation(forTypeIdentifier: UTType.smartNotesBlock.identifier, visibility: .ownProcess) { completion in
-                    completion(Data(block.id.uuidString.utf8), nil)
-                    return nil
-                }
-                return provider
-            } preview: {
-                Text(block.content.plainText.isEmpty ? " " : String(block.content.plainText.prefix(60)))
-                    .font(SNFont.body)
-                    .padding(SNSpacing.xs)
-                    .background(SNColor.card, in: RoundedRectangle(cornerRadius: SNRadius.small))
-            }
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .named("SmartNotes.blocks"))
+                    .onChanged(onDragChanged)
+                    .onEnded { _ in onDragEnded() }
+            )
 
             HStack(alignment: .top, spacing: SNSpacing.xxs) {
                 gutter(style: style)
@@ -148,17 +193,28 @@ private struct BlockRow: View {
         }
         .padding(.leading, -Self.handleSpace)
         .padding(.top, block.type.isHeading ? SNSpacing.xs : 0)
-        .onHover { isHovered = $0 }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = $0 }
-        .overlay(alignment: dropTarget?.placeAfter == true ? .bottom : .top) {
-            if dropTarget?.itemID == block.id {
-                BlockInsertionIndicator().offset(y: dropTarget?.placeAfter == true ? 3 : -3)
+        // The dragged block lifts and follows the pointer.
+        .background {
+            if isDragged {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(SNColor.card)
+                    .shadow(color: .black.opacity(0.16), radius: 10, y: 5)
+                    .padding(.horizontal, -8)
+                    .padding(.vertical, -3)
             }
         }
-        .onDrop(of: [.smartNotesBlock], delegate: BlockDropDelegate(
-            blockID: block.id, rowHeight: rowHeight, model: model,
-            draggingBlockID: $draggingBlockID, dropTarget: $dropTarget
-        ))
+        .scaleEffect(isDragged ? 1.015 : 1)
+        .offset(y: isDragged ? (drag?.offset ?? 0) : 0)
+        .onHover { isHovered = $0 }
+        .overlay(alignment: dropTarget?.placeAfter == true ? .bottom : .top) {
+            if dropTarget?.itemID == block.id {
+                BlockInsertionIndicator()
+                    .padding(.leading, -Self.handleSpace)
+                    .offset(y: dropTarget?.placeAfter == true ? 3 : -3)
+                    .transition(.opacity)
+            }
+        }
+        .snAnimation(SNMotion.hover, value: dropTarget)
     }
 
     private var actions: BlockTextActions {
@@ -234,39 +290,6 @@ private struct BlockRow: View {
         case .quote: "Quote"
         case .paragraph: "Paragraph"
         }
-    }
-}
-
-/// Shows the insertion line and moves the dragged block on drop.
-private struct BlockDropDelegate: DropDelegate {
-    let blockID: UUID
-    let rowHeight: CGFloat
-    let model: NoteEditorModel
-    @Binding var draggingBlockID: UUID?
-    @Binding var dropTarget: DropTarget?
-
-    func validateDrop(info: DropInfo) -> Bool {
-        draggingBlockID != nil && info.hasItemsConforming(to: [.smartNotesBlock])
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        let target = DropTarget(itemID: blockID, placeAfter: info.location.y > rowHeight / 2)
-        if dropTarget != target { dropTarget = target }
-        return DropProposal(operation: .move)
-    }
-
-    func dropExited(info: DropInfo) {
-        if dropTarget?.itemID == blockID { dropTarget = nil }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        defer {
-            draggingBlockID = nil
-            dropTarget = nil
-        }
-        guard let dragged = draggingBlockID else { return false }
-        model.moveBlock(dragged, relativeTo: blockID, placeAfter: info.location.y > rowHeight / 2)
-        return true
     }
 }
 

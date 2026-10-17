@@ -9,9 +9,12 @@ public final class AppDependencies {
     public let externalItems: ExternalItemRepository
     public let integrationStates: IntegrationStateRepository
     public let settings: SettingsStore
+    public let outlookSession: OutlookSession
+    public let outlookPreferences: OutlookPreferences
     public let isInMemory: Bool
 
-    public init(modelContainer: ModelContainer, settings: SettingsStore, isInMemory: Bool) {
+    public init(modelContainer: ModelContainer, settings: SettingsStore, isInMemory: Bool,
+                outlookSession: OutlookSession? = nil, outlookPreferences: OutlookPreferences = OutlookPreferences()) {
         self.modelContainer = modelContainer
         // Saves are explicit (autosave debounce lives in the editor layer).
         modelContainer.mainContext.autosaveEnabled = false
@@ -20,6 +23,8 @@ public final class AppDependencies {
         self.integrationStates = SwiftDataIntegrationStateRepository(container: modelContainer)
         self.settings = settings
         self.isInMemory = isInMemory
+        self.outlookSession = outlookSession ?? OutlookSession(tokenStore: KeychainTokenStore())
+        self.outlookPreferences = outlookPreferences
     }
 
     /// Permanently removes all local data: notes (including Trash), cached
@@ -48,7 +53,9 @@ public final class AppDependencies {
         let deps = AppDependencies(
             modelContainer: container,
             settings: UserDefaultsSettingsStore(defaults: defaults),
-            isInMemory: true
+            isInMemory: true,
+            outlookSession: OutlookSession(tokenStore: InMemoryTokenStore()),
+            outlookPreferences: OutlookPreferences(defaults: defaults)
         )
         if seedSampleData {
             for note in SampleData.notes(now: now) {

@@ -4,7 +4,7 @@ A native, local-first macOS note-taking app (SwiftUI + SwiftData). Specs:
 `Smart_Notes_Technical_Spec.md` (architecture, data, security) and
 `Smart_Notes_UX_UI_Design_Spec.md` (layout, visuals, interactions).
 
-**Status:** Milestones 0–3 and 5 complete. Outlook (M4) is skipped for now. Some interactions still need manual checks; see docs/MILESTONES.md. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
+**Status:** Milestones 0–3 and 5 complete. Outlook (M4) is built and needs your Microsoft app registration to connect. Some interactions still need manual checks; see docs/MILESTONES.md. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 ## Requirements
 - macOS 14 Sonoma or later (developed on macOS 27 / Xcode 27 / Swift 6.4)
@@ -77,7 +77,13 @@ project generator, and adding one (xcodegen/tuist) would be an extra dependency.
 - **Delete everything:** Settings ▸ Data ▸ Delete All…, after a confirmation.
 
 ## Outlook / Microsoft sign-in
-Not implemented (Milestone 4 skipped for now). Until a Microsoft Entra app registration exists,
+1. Create an app registration in Microsoft Entra (Settings ▸ Outlook lists the steps): platform
+   "Public client/native", redirect URI `smartnotes://auth`, delegated permissions `User.Read`, `Mail.Read`, `offline_access`.
+2. Paste the Application (client) ID in Settings ▸ Outlook and press Connect.
+- Read-only. Tokens live only in the Keychain. No client secret.
+- "Mentions of me" uses the Microsoft Graph **beta** `mentionsPreview` filter. "Flagged" and "All inbox" use v1.0.
+- Refreshes on launch, when the app becomes active, and on demand (no background push).
+- Work accounts: check your company's policy; your organization may need to approve the app. Until a Microsoft Entra app registration exists,
 Mentions will run on mock fixtures. Tokens will live in the Keychain only.
 Never put credentials or tokens in source files.
 

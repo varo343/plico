@@ -338,6 +338,12 @@ struct SNPopoverButton<Label: View, Panel: View>: View {
 
 // MARK: - Anchoring
 
+/// Measures position only. Never takes part in hit testing, so clicks and
+/// drags reach the SwiftUI control it sits behind.
+final class PassthroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 /// Holds the AppKit view behind a SwiftUI control. Positions come from AppKit
 /// (view → window → screen), which is correct no matter how many hosting
 /// views or split-view columns sit in between. (SwiftUI's `.global` space is
@@ -356,7 +362,7 @@ struct AnchorReader: NSViewRepresentable {
     let box: AnchorBox
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = PassthroughView()
         box.view = view
         return view
     }

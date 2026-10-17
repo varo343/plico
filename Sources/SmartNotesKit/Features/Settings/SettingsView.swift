@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 public enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, editor, data
+    case general, editor, outlook, data
 
     public var id: String { rawValue }
 
@@ -10,6 +10,7 @@ public enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .editor: "Editor"
+        case .outlook: "Outlook"
         case .data: "Data"
         }
     }
@@ -18,6 +19,7 @@ public enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .editor: "textformat"
+        case .outlook: "envelope"
         case .data: "externaldrive"
         }
     }
@@ -26,6 +28,7 @@ public enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: "Appearance"
         case .editor: "Default font and size"
+        case .outlook: "Connect and choose what to show"
         case .data: "Export, storage, delete"
         }
     }
@@ -87,6 +90,7 @@ struct SettingsPaneView: View {
                 switch pane {
                 case .general: GeneralSettings(settings: app.settings)
                 case .editor: EditorSettings(settings: app.settings)
+                case .outlook: OutlookSettings(outlook: app.outlook)
                 case .data: DataSettings(app: app)
                 }
             }
@@ -221,6 +225,7 @@ private struct SNSegmented<Value: Hashable>: View {
                         .font(.system(size: 12, weight: isSelected ? .semibold : .regular).monospacedDigit())
                         .foregroundStyle(isSelected ? SNColor.textPrimary : SNColor.textSecondary)
                         .frame(minWidth: 40)
+                        .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background {
                             if isSelected {
@@ -393,6 +398,140 @@ extension AppearancePreference {
         case .system: "System"
         case .light: "Light"
         case .dark: "Dark"
+        }
+    }
+}
+
+struct OutlookSettings: View {
+    @Bindable var outlook: OutlookModel
+    @State private var confirmDisconnect = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SNSpacing.l) {
+            SettingsGroup(title: "Connection") {
+                SettingsRow(icon: "envelope", tint: outlook.account == nil ? SNColor.borderSubtle : SNColor.accentMint,
+                            title: outlook.account?.address ?? "Not connected",
+                            subtitle: outlook.account == nil
+                                ? (outlook.configuration.isComplete ? "Ready to connect." : "Add your app registration below first.")
+                                : "Read-only. Smart Notes never sends, deletes or changes email.") {
+                    if outlook.account == nil {
+                        Button(outlook.status == .connecting ? "Connecting…" : "Connect") { Task { await outlook.connect() } }
+                            .buttonStyle(SNCapsuleButtonStyle())
+                            .disabled(!outlook.configuration.isComplete || outlook.status == .connecting)
+                    } else {
+                        Button("Disconnect…") { confirmDisconnect = true }
+                            .buttonStyle(SNCapsuleButtonStyle(isDestructive: true))
+                    }
+                }
+            }
+
+            SettingsGroup(title: "Show in Mentions", footnote: outlook.scope == .mentions
+                ? "Mentions uses a Microsoft Graph beta feature. If Microsoft changes it, switch to Flagged or All inbox."
+                : nil) {
+                VStack(alignment: .leading, spacing: SNSpacing.xs) {
+                    SNSegmented(options: OutlookImportScope.allCases, selection: $outlook.scope, label: { $0.title })
+                    Text(outlook.scope.explanation).font(.system(size: 11.5)).foregroundStyle(SNColor.textSecondary)
+                }
+            }
+
+            SettingsGroup(title: "App registration", footnote: "Using a work account? Check your company's policy for third-party apps first. Your organization may need to approve access.") {
+                VStack(alignment: .leading, spacing: SNSpacing.s) {
+                    LabeledField(title: "Application (client) ID", placeholder: "00000000-0000-0000-0000-000000000000",
+                                 text: Binding(get: { outlook.configuration.clientID }, set: { outlook.configuration.clientID = $0.trimmingCharacters(in: .whitespaces) }),
+                                 isValid: outlook.configuration.clientID.isEmpty || UUID(uuidString: outlook.configuration.clientID) != nil)
+                    HStack(alignment: .bottom, spacing: SNSpacing.xs) {
+                        LabeledField(title: "Account type or tenant ID", placeholder: "common",
+                                     text: Binding(get: { outlook.configuration.tenant }, set: { outlook.configuration.tenant = $0.trimmingCharacters(in: .whitespaces) }),
+                                     isValid: !outlook.configuration.tenant.isEmpty)
+                        SNDropdown(minWidth: 240) {
+                            [("common", "Work and personal accounts"), ("organizations", "Work or school accounts"), ("consumers", "Personal accounts")].map { value, title in
+                                .item(SNMenuItem(title: title, isChecked: outlook.configuration.tenant == value, shortcut: value) { outlook.configuration.tenant = value })
+                            }
+                        } label: {
+                            Text("Presets").font(.system(size: 12))
+                        }
+                    }
+                    HStack(spacing: SNSpacing.xs) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Redirect URI").font(.system(size: 11, weight: .semibold)).foregroundStyle(SNColor.textSecondary)
+                            Text(OutlookConfiguration.redirectURI).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(SNColor.textPrimary)
+                                .textSelection(.enabled)
+                        }
+                        Spacer()
+                        Button("Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(OutlookConfiguration.redirectURI, forType: .string)
+                        }
+                        .buttonStyle(SNCapsuleButtonStyle())
+                    }
+                    Rectangle().fill(SNColor.borderSubtle).frame(height: 1)
+                    SetupSteps()
+                }
+            }
+        }
+        .confirmationDialog("Disconnect Outlook?", isPresented: $confirmDisconnect, titleVisibility: .visible) {
+            Button("Disconnect and Remove Saved Emails", role: .destructive) { outlook.disconnect(removeSavedMessages: true) }
+            Button("Disconnect, Keep Saved Emails") { outlook.disconnect(removeSavedMessages: false) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your sign-in is removed from this Mac. Notes you created from emails are kept either way.")
+        }
+    }
+}
+
+private struct LabeledField: View {
+    let title: String
+    let placeholder: String
+    @Binding var text: String
+    var isValid = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(SNColor.textSecondary)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12.5, design: .monospaced))
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(SNColor.card, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isValid ? SNColor.borderSubtle : SNColor.accentCoral, lineWidth: isValid ? 1 : 1.5))
+        }
+    }
+}
+
+private struct SetupSteps: View {
+    private let steps = [
+        "Open Microsoft Entra ▸ App registrations ▸ New registration. Name it \"Smart Notes\".",
+        "Supported account types: pick what you use (work, personal, or both).",
+        "Redirect URI: platform \"Public client/native (mobile & desktop)\", value smartnotes://auth.",
+        "API permissions ▸ Microsoft Graph ▸ Delegated: User.Read, Mail.Read, offline_access.",
+        "Copy the Application (client) ID here, then press Connect.",
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SNSpacing.xs) {
+            HStack {
+                Text("How to set up (5 minutes)").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(SNColor.textPrimary)
+                Spacer()
+                Button {
+                    if let url = URL(string: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    HStack(spacing: 4) { MotionIcon(symbol: "square.and.arrow.up", size: 11, weight: .semibold); Text("Open Entra") }
+                }
+                .buttonStyle(SNCapsuleButtonStyle())
+            }
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                HStack(alignment: .firstTextBaseline, spacing: SNSpacing.xs) {
+                    Text("\(index + 1)")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .frame(width: 18, height: 18)
+                        .background(WobblyCapsuleShape(variant: index, amplitude: 1.6).fill(SNColor.accentSun))
+                    Text(step).font(.system(size: 12)).foregroundStyle(SNColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 }

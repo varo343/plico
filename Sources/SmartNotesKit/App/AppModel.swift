@@ -10,6 +10,7 @@ public final class AppModel {
     public let notes: NotesModel
     public let today: TodayModel
     public let settings: SettingsModel
+    public let outlook: OutlookModel
 
     public var destination: SidebarDestination = .notes {
         didSet { if destination != oldValue { notes.flush() } }
@@ -25,9 +26,22 @@ public final class AppModel {
         self.notes = NotesModel(repository: dependencies.notes, settings: dependencies.settings)
         self.today = TodayModel(repository: dependencies.notes)
         self.settings = SettingsModel(store: dependencies.settings)
+        self.outlook = OutlookModel(
+            repository: dependencies.externalItems,
+            integrationStates: dependencies.integrationStates,
+            session: dependencies.outlookSession,
+            preferences: dependencies.outlookPreferences
+        )
         notes.load()
         // Writing first: the caret starts in the open note, not in Search.
         notes.editor?.focusFirstBlock(scrollsIntoView: false)
+    }
+
+    /// Explicit "Create Note" on an email: a new editable note with a link back.
+    public func createNote(fromMention item: ExternalItem) {
+        let note = outlook.makeNote(from: item, rank: ManualOrdering.rankForNewNote(existing: notes.activeNotes))
+        destination = .notes
+        notes.addNote(note)
     }
 
     /// FAB and ⌘N behave identically from any destination.
@@ -71,6 +85,7 @@ public final class AppModel {
     /// Permanently deletes everything. The UI confirms before calling this.
     public func deleteAllData() {
         notes.select(nil)
+        outlook.disconnect(removeSavedMessages: true)
         do {
             try dependencies.deleteAllData()
         } catch {
@@ -106,5 +121,10 @@ public final class AppModel {
                 MainActor.assumeIsolated { self?.today.refreshDay() }
             })
         }
+        // Outlook refreshes on launch and when the app comes back to the front (no background push).
+        observers.append(center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.outlook.refreshIfStale() }
+        })
+        outlook.refreshIfStale(minimumInterval: 0)
     }
 }

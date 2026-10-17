@@ -2,12 +2,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-extension UTType {
-    /// In-app block drags. Private to the process, so text views and other apps
-    /// never receive it (declared in the app's Info.plist).
-    static let smartNotesBlock = UTType(exportedAs: "local.smartnotes.block")
-}
-
 /// Sends a formatting action to the focused block's text view.
 @MainActor
 enum EditorActions {
@@ -260,26 +254,40 @@ extension FontFamilyPreset {
     }
 }
 
-/// Grip shown on block hover. Drag to reorder; right-click or VoiceOver
-/// actions provide Move Up / Move Down without dragging.
+/// Grip shown on block hover: drag it to move the block. Right-click or
+/// VoiceOver actions offer Move Up / Move Down without dragging.
 struct BlockDragHandle: View {
     let isVisible: Bool
+    var isDragging = false
     let height: CGFloat
     let moveUp: () -> Void
     let moveDown: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Image(systemName: "circle.grid.2x3.fill")
-            .font(.system(size: 9))
-            .foregroundStyle(SNColor.textSecondary)
-            .frame(width: 18, height: height)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(isHovered || isDragging ? SNColor.textPrimary : SNColor.textSecondary)
+            .frame(width: 20, height: max(height, 22))
+            .background {
+                if isHovered || isDragging {
+                    WobblyRoundedRectShape(radius: 6).fill(SNColor.borderSubtle.opacity(0.7))
+                }
+            }
             .contentShape(Rectangle())
-            .opacity(isVisible ? 1 : 0)
-            .help("Drag to move this block. Right-click for more.")
+            // Nearly (not fully) transparent when hidden: SwiftUI skips hit testing
+            // at opacity 0, and the grip must be grabbable as soon as the pointer is there.
+            .opacity(isVisible ? 1 : 0.001)
+            .onHover { inside in
+                isHovered = inside
+                if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+            }
+            .hoverLabel("Drag to move · right-click for more")
             .contextMenu {
                 Button("Move Up", action: moveUp)
                 Button("Move Down", action: moveDown)
             }
+            .snAnimation(SNMotion.hover, value: isVisible)
             .accessibilityLabel("Move block")
             .accessibilityAction(named: "Move Up", moveUp)
             .accessibilityAction(named: "Move Down", moveDown)

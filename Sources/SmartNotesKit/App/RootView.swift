@@ -147,6 +147,7 @@ public struct RootView: View {
         switch app.destination {
         case .notes: NotesSortMenu(model: app.notes)
         case .trash: EmptyTrashButton(model: app.notes)
+        case .mentions: MentionsHeaderControls(outlook: app.outlook)
         default: EmptyView()
         }
     }
@@ -163,8 +164,10 @@ public struct RootView: View {
         case .settings:
             SettingsPaneList(selection: $app.settingsPane)
         case .mentions:
-            EmptyState(symbol: "envelope", tint: SNColor.accentCoral, title: "Outlook isn't set up",
-                       message: "Mentions will show Outlook messages you choose to follow, such as flagged mail. This version doesn't connect to Outlook yet.")
+            MentionsView(outlook: app.outlook) {
+                app.settingsPane = .outlook
+                app.destination = .settings
+            }
         }
     }
 
@@ -181,7 +184,7 @@ public struct RootView: View {
                 case .trash:
                     EmptyState(symbol: "arrow.uturn.backward", tint: SNColor.borderSubtle, title: "Restore a note to edit it", message: "")
                 case .mentions:
-                    Color.clear
+                    MentionDetailView(outlook: app.outlook) { app.createNote(fromMention: $0) }
                 default:
                     if app.notes.hasAnyNotes {
                         EmptyState(symbol: "note.text", tint: SNColor.borderSubtle, title: "No note selected", message: "Select a note or press ⌘N.")
