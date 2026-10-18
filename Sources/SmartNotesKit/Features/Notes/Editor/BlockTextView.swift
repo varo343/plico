@@ -499,10 +499,16 @@ final class BlockNSTextView: NSTextView {
         }
         let range = selectedRange()
         guard range.length > 0, let storage = textStorage else { return }
+        // Written eagerly: NSTextView's writeSelection(to:types:) only promises
+        // the data, and the promise came back empty, leaving the clipboard blank.
+        let selected = storage.attributedSubstring(from: range)
         pasteboard.clearContents()
-        _ = writeSelection(to: pasteboard, types: [.rtf, .string])
-        if let data = try? RichTextAttributes.richText(from: storage.attributedSubstring(from: range)).encodedData() {
-            pasteboard.addTypes([.smartNotesRichText], owner: nil)
+        pasteboard.declareTypes([.string, .rtf, .smartNotesRichText], owner: nil)
+        pasteboard.setString(selected.string, forType: .string)
+        if let rtf = selected.rtf(from: NSRange(location: 0, length: selected.length), documentAttributes: [:]) {
+            pasteboard.setData(rtf, forType: .rtf)
+        }
+        if let data = try? RichTextAttributes.richText(from: selected).encodedData() {
             pasteboard.setData(data, forType: .smartNotesRichText)
         }
     }

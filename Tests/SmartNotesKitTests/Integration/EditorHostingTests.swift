@@ -278,7 +278,8 @@ final class EditorHarness {
         h.textViews.forEach { $0.pasteboard = board }
         h.select(block: 0, range: 0..<18)
         h.focused?.copy(nil)
-        #expect(board.types?.contains(.rtf) == true)        // other apps still get RTF
+        #expect(board.data(forType: .rtf)?.isEmpty == false) // other apps still get RTF
+        #expect(board.string(forType: .string) == "code and serif")
         h.click(block: 1, at: 8)
         h.focused?.paste(nil)
         await h.pump()
