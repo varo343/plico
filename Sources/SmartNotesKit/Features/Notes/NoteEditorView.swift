@@ -10,6 +10,7 @@ struct NoteEditorView: View {
     @State private var drag: BlockDrag?
     @State private var dropTarget: DropTarget?
     @State private var blockFrames: [UUID: CGRect] = [:]
+    @State private var selectionTracker = BlockSelectionTracker()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +38,7 @@ struct NoteEditorView: View {
                     // is being edited, losing focus and in-progress input.
                     VStack(alignment: .leading, spacing: SNSpacing.xxs) {
                         let numbers = listNumbers(model.note.blocks)
+                        let highlights = Dictionary(model.rangeSegments.map { ($0.blockID, $0.range) }, uniquingKeysWith: { $1 })
                         ForEach(Array(model.note.blocks.enumerated()), id: \.element.id) { index, block in
                             BlockRow(
                                 block: block,
@@ -46,6 +48,9 @@ struct NoteEditorView: View {
                                 model: model,
                                 drag: drag,
                                 dropTarget: dropTarget,
+                                tracker: selectionTracker,
+                                rangeHighlight: highlights[block.id],
+                                isRangeSelecting: model.rangeSelection != nil,
                                 onDragChanged: { dragChanged(block.id, $0) },
                                 onDragEnded: { dragEnded(block.id) }
                             )
@@ -73,6 +78,8 @@ struct NoteEditorView: View {
                 .frame(maxWidth: .infinity)
             }
         }
+        .onAppear { selectionTracker.model = model }
+        .onChange(of: ObjectIdentifier(model)) { selectionTracker.model = model }
         .modifier(SlashMenuPresenter(model: model))
         .sheet(isPresented: Binding(get: { model.linkDraft != nil }, set: { if !$0 { model.cancelLinkEditing() } })) {
             LinkEditorSheet(model: model)
@@ -150,6 +157,9 @@ private struct BlockRow: View {
     let model: NoteEditorModel
     let drag: BlockDrag?
     let dropTarget: DropTarget?
+    let tracker: BlockSelectionTracker
+    let rangeHighlight: Range<Int>?
+    let isRangeSelecting: Bool
     let onDragChanged: (DragGesture.Value) -> Void
     let onDragEnded: () -> Void
     /// Pointer over the row's SwiftUI parts (grip, gutter) or over its text.
@@ -188,7 +198,10 @@ private struct BlockRow: View {
                     accessibilityLabel: accessibilityLabel,
                     focusRequest: focusRequest,
                     blockID: block.id,
-                    actions: actions
+                    actions: actions,
+                    tracker: tracker,
+                    rangeHighlight: rangeHighlight,
+                    isRangeSelecting: isRangeSelecting
                 )
             }
             .padding(.leading, CGFloat(block.indentLevel) * Self.indentWidth)

@@ -423,4 +423,76 @@ final class EditorHarness {
         #expect(h.editor.note.blocks[0].type == .paragraph)
         #expect(h.plainBlocks == ["Task /checkbox "])
     }
+
+    // MARK: Multi-block selection
+
+    /// Runs the text view's own drag loop with synthesized mouse events.
+    private func drag(_ h: EditorHarness, from start: (block: Int, offset: Int), to end: (block: Int, offset: Int)) {
+        func point(_ block: Int, _ offset: Int) -> NSPoint {
+            let view = h.textViews[block]
+            let glyphs = view.layoutManager!.glyphRange(forCharacterRange: NSRange(location: offset, length: 0), actualCharacterRange: nil)
+            var rect = view.layoutManager!.boundingRect(forGlyphRange: NSRange(location: glyphs.location, length: 0), in: view.textContainer!)
+            rect.size.height = max(rect.height, 10)
+            return view.convert(NSPoint(x: rect.minX + 0.5, y: rect.midY), to: nil)
+        }
+        func mouse(_ type: NSEvent.EventType, _ location: NSPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: 0, windowNumber: h.window.windowNumber,
+                               context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        let view = h.textViews[start.block]
+        var queue = [mouse(.leftMouseDragged, point(end.block, end.offset)), mouse(.leftMouseUp, point(end.block, end.offset))]
+        view.trackingEvents = { _ in queue.isEmpty ? nil : queue.removeFirst() }
+        view.mouseDown(with: mouse(.leftMouseDown, point(start.block, start.offset)))
+    }
+
+    @Test func dragSelectsAcrossBlocksAndBackspaceDeletesIt() async throws {
+        let h = try await EditorHarness.make(blocks: [
+            (.paragraph, RichText(plain: "Hello")), (.bulletItem, RichText(plain: "middle")), (.checklistItem, RichText(plain: "Task done")),
+        ])
+        drag(h, from: (0, 2), to: (2, 5))
+        let selection = try #require(h.editor.rangeSelection)
+        #expect(selection.anchor == BlockPosition(blockID: h.editor.note.blocks[0].id, offset: 2))
+        #expect(h.editor.rangeSegments.map(\.range) == [2..<5, 0..<6, 0..<5])
+        // The middle block is painted as selected.
+        let middle = h.textViews[1]
+        #expect(middle.layoutManager?.temporaryAttribute(.backgroundColor, atCharacterIndex: 0, effectiveRange: nil) != nil)
+
+        await h.pressBackspace()
+        #expect(h.plainBlocks == ["Hedone"])
+        #expect(h.textViews.allSatisfy { $0.layoutManager?.temporaryAttribute(.backgroundColor, atCharacterIndex: 0, effectiveRange: nil) == nil })
+    }
+
+    @Test func dragWithinOneBlockIsANormalSelection() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "Hello world")), (.paragraph, RichText(plain: "next"))])
+        drag(h, from: (0, 0), to: (0, 5))
+        #expect(h.editor.rangeSelection == nil)
+        #expect(h.textViews[0].selectedRange() == NSRange(location: 0, length: 5))
+    }
+
+    @Test func copyingAMultiBlockSelectionPastesBackAsBlocks() async throws {
+        let h = try await EditorHarness.make(blocks: [
+            (.paragraph, RichText(plain: "Intro")), (.checklistItem, RichText(plain: "Task")), (.paragraph, RichText(plain: "")),
+        ])
+        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        h.textViews.forEach { $0.pasteboard = board }
+        drag(h, from: (0, 0), to: (1, 4))
+        h.focused?.copy(nil)
+        #expect(board.string(forType: .string) == "Intro\n- [ ] Task")
+        h.click(block: 2, at: 0)
+        await h.pump()
+        h.focused?.paste(nil)
+        await h.pump()
+        #expect(h.plainBlocks == ["Intro", "Task", "Intro", "Task"])
+        #expect(h.editor.note.blocks[3].type == .checklistItem)
+    }
+
+    @Test func secondSelectAllSelectsTheWholeNote() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "One")), (.paragraph, RichText(plain: "Two"))])
+        h.click(block: 0, at: 0)
+        h.focused?.selectAll(nil)
+        #expect(h.editor.rangeSelection == nil)
+        h.focused?.selectAll(nil)
+        #expect(h.editor.rangeSegments.map(\.range) == [0..<3, 0..<3])
+    }
 }

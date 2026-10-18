@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 extension NSPasteboard.PasteboardType {
     /// Lossless in-app copy of one block's selection (RichText JSON).
     static let smartNotesRichText = NSPasteboard.PasteboardType("local.smartnotes.richtext")
+    /// Lossless in-app copy of a selection spanning several blocks ([PastedParagraph] JSON).
+    static let smartNotesBlocks = NSPasteboard.PasteboardType("local.smartnotes.blocks")
 }
 
 /// Reduces pasted HTML to a small allowlist of formatting tags before it is
@@ -73,6 +75,9 @@ enum PasteConverter {
     /// `template` supplies the formatting at the caret, used for plain text.
     static func paragraphs(from pasteboard: NSPasteboard, plainOnly: Bool, template: TextRun) -> [PastedParagraph]? {
         if !plainOnly {
+            if let data = pasteboard.data(forType: .smartNotesBlocks), let paragraphs = try? decode(data), !paragraphs.isEmpty {
+                return paragraphs
+            }
             if let data = pasteboard.data(forType: .smartNotesRichText), let text = try? RichText.decode(from: data) {
                 return [PastedParagraph(content: text)] // copies stay within one block
             }
@@ -92,6 +97,16 @@ enum PasteConverter {
         }
         guard let string = pasteboard.string(forType: .string) else { return nil }
         return plainParagraphs(string, template: template)
+    }
+
+    static func encode(_ paragraphs: [PastedParagraph]) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return try encoder.encode(paragraphs)
+    }
+
+    static func decode(_ data: Data) throws -> [PastedParagraph] {
+        try JSONDecoder().decode([PastedParagraph].self, from: data)
     }
 
     static func plainParagraphs(_ string: String, template: TextRun) -> [PastedParagraph] {

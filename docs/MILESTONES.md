@@ -64,6 +64,9 @@ no block type changes, indent, block drag or Move Up/Down, undo is per block onl
   HTML sanitized (allowlist) before import; unsafe links dropped, text kept; Paste and Match Style = plain
 - ✅ Copy inside Smart Notes is lossless (private RichText type); other apps get RTF + plain text
 - ✅ Ranks renormalized automatically when keys grow long; duplicate ranks repaired on move
+- ✅ Multi-block text selection: drag across blocks (or Shift-click, or ⌘A twice); copy/cut keep block
+  kinds inside Plico (plain text with list markers for other apps); Delete, typing, Return and paste
+  replace it; ⌘B/I/U, font presets and block type apply to every selected block; ⌘Z undoes in one step
 - ✅ 150 tests passing (3 consecutive runs); hosted tests drive the real text views for formatting,
   typing after toggling a mark, Tab, undo/redo across blocks, menu validation, copy/paste, multi-paragraph paste, moves
 
@@ -73,10 +76,11 @@ no block type changes, indent, block drag or Move Up/Down, undo is per block onl
 - [ ] ⌘B/I/U and ⌘K from the menu bar act on the focused block
 - [ ] Paste from Safari, Chrome, Pages and Word: formatting maps sensibly, no text lost
 - [ ] Right-click in text shows Move Block Up/Down
+- [ ] Drag-select from a paragraph into a checklist with the real mouse, also past the window edge (autoscroll)
 
 **Known limitations:**
 - The title field has its own undo history (the standard text field one), separate from the note body.
-- Multi-block selection and multi-block drag are not supported (phase 2 in the spec).
+- Multi-block drag (moving several selected blocks at once) is not supported (phase 2 in the spec).
 - Pasted headings become body text with bold; heading levels aren't inferred from pasted font sizes.
 
 ## Milestone 3 — Priority, dates, Today ✅ (automated) · 🟡 manual checks pending

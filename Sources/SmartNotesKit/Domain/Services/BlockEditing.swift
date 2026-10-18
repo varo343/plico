@@ -167,6 +167,8 @@ public enum BlockEditing {
         // Pasting a list into an empty block adopts the list's kind.
         if block.content.isEmpty, block.type == .paragraph {
             note.blocks[index].type = paragraphs[0].type
+            note.blocks[index].indentLevel = paragraphs[0].type.supportsIndent ? paragraphs[0].indentLevel : 0
+            note.blocks[index].isChecked = paragraphs[0].type == .checklistItem && paragraphs[0].isChecked
         }
         note.blocks[index].content = head + paragraphs[0].content
 
@@ -178,7 +180,11 @@ public enum BlockEditing {
             let isLast = position == paragraphs.count - 1
             let rank = try Rank.between(lower, upper)
             let content = isLast ? paragraph.content + tail : paragraph.content
-            let newBlock = NoteBlock(type: paragraph.type, rank: rank, content: content)
+            let newBlock = NoteBlock(
+                type: paragraph.type, rank: rank, content: content,
+                isChecked: paragraph.type == .checklistItem && paragraph.isChecked,
+                indentLevel: paragraph.type.supportsIndent ? paragraph.indentLevel : 0
+            )
             note.blocks.append(newBlock)
             lower = rank
             lastID = newBlock.id
@@ -202,12 +208,16 @@ public enum BlockEditing {
 }
 
 /// One paragraph of pasted content, already mapped to supported kinds and marks.
-public struct PastedParagraph: Equatable, Sendable {
+public struct PastedParagraph: Equatable, Sendable, Codable {
     public var type: BlockType
     public var content: RichText
+    public var indentLevel: Int
+    public var isChecked: Bool
 
-    public init(type: BlockType = .paragraph, content: RichText) {
+    public init(type: BlockType = .paragraph, content: RichText, indentLevel: Int = 0, isChecked: Bool = false) {
         self.type = type
         self.content = content
+        self.indentLevel = indentLevel
+        self.isChecked = isChecked
     }
 }

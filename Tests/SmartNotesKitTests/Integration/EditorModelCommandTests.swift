@@ -126,4 +126,42 @@ import Testing
         editor.undo()
         #expect(texts(editor) == ["ab"])
     }
+
+    // MARK: Multi-block selection
+
+    private func range(_ editor: NoteEditorModel, from: (Int, Int), to: (Int, Int)) {
+        let blocks = editor.note.blocks
+        editor.setRangeSelection(anchor: BlockPosition(blockID: blocks[from.0].id, offset: from.1),
+                                 focus: BlockPosition(blockID: blocks[to.0].id, offset: to.1))
+    }
+
+    @Test func typingOverMultiBlockSelectionReplacesItInOneUndoStep() throws {
+        let (editor, _, _) = try makeEditor([(.paragraph, RichText(plain: "Hello")), (.bulletItem, RichText(plain: "list")), (.paragraph, RichText(plain: "world"))])
+        range(editor, from: (0, 2), to: (2, 3))
+        #expect(editor.hasTextSelection)
+        editor.replaceRangeSelection(with: "y")
+        #expect(texts(editor) == ["Heyld"])
+        #expect(editor.rangeSelection == nil)
+        editor.undo()
+        #expect(texts(editor) == ["Hello", "list", "world"])
+    }
+
+    @Test func formattingAndBlockTypeApplyToTheWholeSelection() throws {
+        let (editor, _, _) = try makeEditor([(.paragraph, RichText(plain: "one")), (.paragraph, RichText(plain: "two")), (.paragraph, RichText(plain: "three"))])
+        range(editor, from: (0, 0), to: (2, 5))
+        editor.toggleMark(.bold, blockID: editor.note.blocks[0].id, range: 0..<0)
+        #expect(editor.note.blocks.allSatisfy { $0.content.commonMarks(in: 0..<$0.content.utf16Length) == [.bold] })
+        #expect(editor.selectionMarks == [.bold])
+        editor.setBlockType(.checklistItem)
+        #expect(editor.note.blocks.map(\.type) == [.checklistItem, .checklistItem, .checklistItem])
+        #expect(editor.rangeSelection != nil) // still selected for the next command
+    }
+
+    @Test func selectAllCoversEveryBlockAndSingleBlockRangeClears() throws {
+        let (editor, _, _) = try makeEditor([(.paragraph, RichText(plain: "a")), (.paragraph, RichText(plain: "bc"))])
+        editor.selectAllBlocks()
+        #expect(editor.rangeSegments.map(\.range) == [0..<1, 0..<2])
+        range(editor, from: (1, 0), to: (1, 2))
+        #expect(editor.rangeSelection == nil)
+    }
 }

@@ -64,6 +64,8 @@ public final class NoteEditorModel {
     public private(set) var selectionMarks: Set<InlineMark> = []
     /// Block containing the caret; target of block commands.
     public private(set) var activeBlockID: UUID?
+    /// Text selected across several blocks (nil when the selection is inside one block).
+    public private(set) var rangeSelection: BlockRangeSelection?
     public var linkDraft: LinkDraft?
     public private(set) var slashMenu: SlashMenuState?
     /// A dismissed (Esc) "/" stays dismissed until the caret leaves it.
@@ -105,6 +107,9 @@ public final class NoteEditorModel {
     }
 
     private var selectionRuns: [TextRun] {
+        if let rangeSelection {
+            return BlockEditing.copiedParagraphs(note, selection: rangeSelection).flatMap(\.content.runs)
+        }
         guard let selection, let block = note.blocks.first(where: { $0.id == selection.blockID }) else { return [] }
         let range = selection.range.isEmpty ? 0..<block.content.utf16Length : selection.range
         return block.content.split(atUTF16Offset: range.lowerBound).tail.split(atUTF16Offset: range.count).head.runs
@@ -137,6 +142,8 @@ public final class NoteEditorModel {
             history.breakCoalescing() // caret jumped: start a new undo step
         }
         selection = newSelection
+        // A multi-block selection owns the toolbar state until it is cleared.
+        guard rangeSelection == nil else { return }
         if activeBlockID != blockID { activeBlockID = blockID }
         let hasSelection = !range.isEmpty
         if hasTextSelection != hasSelection { hasTextSelection = hasSelection }
@@ -149,18 +156,24 @@ public final class NoteEditorModel {
     /// Toggles `mark` on a non-empty range. (Empty selections change typing
     /// attributes in the text view instead.)
     public func toggleMark(_ mark: InlineMark, blockID: UUID, range: Range<Int>) {
+        if rangeSelection != nil {
+            toggleMarkInRangeSelection(mark)
+            return
+        }
         guard !range.isEmpty else { return }
         transformContent(of: blockID, keepingSelection: range) { $0.toggling(mark, in: range) }
     }
 
     /// Font family preset. With no selection, applies to the whole block.
     public func setFontFamily(_ family: FontFamilyPreset?) {
+        if rangeSelection != nil { return transformRangeSelection { $0.fontFamily = family } }
         guard let (id, range) = formattingTarget() else { return }
         transformContent(of: id, keepingSelection: selection?.range) { $0.transformingRuns(in: range) { $0.fontFamily = family } }
     }
 
     /// Text size preset. With no selection, applies to the whole block.
     public func setFontSize(_ size: FontSizePreset?) {
+        if rangeSelection != nil { return transformRangeSelection { $0.fontSize = size } }
         guard let (id, range) = formattingTarget() else { return }
         transformContent(of: id, keepingSelection: selection?.range) { $0.transformingRuns(in: range) { $0.fontSize = size } }
     }
@@ -234,6 +247,16 @@ public final class NoteEditorModel {
     }
 
     public func setBlockType(_ type: BlockType, blockID: UUID? = nil) {
+        if blockID == nil, let selection = rangeSelection {
+            // Every block the selection touches changes kind; the selection stays.
+            let ids = BlockEditing.segments(of: selection, in: note).map(\.blockID)
+            let updated = ids.reduce(note) { note, id in BlockEditing.setType(note, blockID: id, to: type) ?? note }
+            guard updated != note else { return }
+            recordUndo(.structural)
+            note = updated
+            markChanged()
+            return
+        }
         guard let id = blockID ?? activeBlockID else { return }
         applyKeepingCaret(on: id) { BlockEditing.setType($0, blockID: id, to: type) }
     }
@@ -258,6 +281,125 @@ public final class NoteEditorModel {
 
     public func paste(_ paragraphs: [PastedParagraph], blockID: UUID, range: Range<Int>) {
         apply { try BlockEditing.paste($0, blockID: blockID, range: range, paragraphs: paragraphs) }
+    }
+
+    // MARK: Multi-block selection
+
+    /// Selects from `anchor` to `focus`. A selection inside one block is left to
+    /// that block's text view, so this clears instead.
+    public func setRangeSelection(anchor: BlockPosition, focus: BlockPosition) {
+        let selection = BlockRangeSelection(anchor: anchor, focus: focus)
+        guard anchor.blockID != focus.blockID, BlockEditing.ordered(selection, in: note) != nil else {
+            clearRangeSelection()
+            return
+        }
+        guard selection != rangeSelection else { return }
+        rangeSelection = selection
+        history.breakCoalescing()
+        activeBlockID = focus.blockID
+        if !hasTextSelection { hasTextSelection = true }
+        refreshRangeSelectionMarks()
+    }
+
+    public func clearRangeSelection() {
+        guard rangeSelection != nil else { return }
+        rangeSelection = nil
+        if let selection {
+            activeBlockID = selection.blockID
+            hasTextSelection = !selection.range.isEmpty
+        } else {
+            hasTextSelection = false
+        }
+    }
+
+    /// ⌘A in a block that is already fully selected: the whole note.
+    public func selectAllBlocks() {
+        guard let first = note.blocks.first, let last = note.blocks.last, first.id != last.id else { return }
+        setRangeSelection(anchor: BlockPosition(blockID: first.id, offset: 0),
+                          focus: BlockPosition(blockID: last.id, offset: last.content.utf16Length))
+    }
+
+    /// The selected range in each block, top to bottom (empty without a multi-block selection).
+    public var rangeSegments: [BlockSegment] {
+        rangeSelection.map { BlockEditing.segments(of: $0, in: note) } ?? []
+    }
+
+    /// Copy: the selected paragraphs with their kinds.
+    public var copiedRangeParagraphs: [PastedParagraph] {
+        rangeSelection.map { BlockEditing.copiedParagraphs(note, selection: $0) } ?? []
+    }
+
+    /// Backspace / Delete / Cut.
+    public func deleteRangeSelection() {
+        guard let selection = rangeSelection else { return }
+        rangeSelection = nil
+        apply { try BlockEditing.deleteRange($0, selection: selection) }
+    }
+
+    /// Typing over the selection replaces it; Return (`"\n"`) also splits there.
+    public func replaceRangeSelection(with text: String) {
+        guard let selection = rangeSelection else { return }
+        rangeSelection = nil
+        apply { note in
+            let deleted = try BlockEditing.deleteRange(note, selection: selection)
+            if text == "\n" {
+                return try BlockEditing.split(deleted.note, blockID: deleted.focusBlockID, atUTF16Offset: deleted.focusOffset)
+            }
+            // Typed text continues the formatting before the caret.
+            let block = deleted.note.blocks.first { $0.id == deleted.focusBlockID }
+            var run = block?.content.split(atUTF16Offset: deleted.focusOffset).head.runs.last ?? TextRun("")
+            run.text = text
+            run.link = nil
+            let offset = deleted.focusOffset
+            return try BlockEditing.paste(deleted.note, blockID: deleted.focusBlockID, range: offset..<offset,
+                                          paragraphs: [PastedParagraph(content: RichText(runs: [run]))])
+        }
+    }
+
+    /// Pasting over the selection replaces it.
+    public func pasteOverRangeSelection(_ paragraphs: [PastedParagraph]) {
+        guard let selection = rangeSelection else { return }
+        rangeSelection = nil
+        apply { note in
+            let deleted = try BlockEditing.deleteRange(note, selection: selection)
+            let offset = deleted.focusOffset
+            return try BlockEditing.paste(deleted.note, blockID: deleted.focusBlockID, range: offset..<offset, paragraphs: paragraphs)
+                ?? deleted
+        }
+    }
+
+    private func toggleMarkInRangeSelection(_ mark: InlineMark) {
+        let segments = rangeSegments.filter { !$0.range.isEmpty }
+        guard !segments.isEmpty else { return }
+        let allMarked = segments.allSatisfy { segment in
+            note.blocks.first { $0.id == segment.blockID }?.content.commonMarks(in: segment.range).contains(mark) ?? false
+        }
+        transformRangeSelection { run in
+            if allMarked { run.marks.remove(mark) } else { run.marks.insert(mark) }
+        }
+    }
+
+    /// Applies `transform` to the selected runs of every covered block, as one undo step.
+    private func transformRangeSelection(_ transform: (inout TextRun) -> Void) {
+        var updated = note
+        for segment in rangeSegments where !segment.range.isEmpty {
+            guard let index = updated.blocks.firstIndex(where: { $0.id == segment.blockID }) else { continue }
+            updated.blocks[index].content = updated.blocks[index].content.transformingRuns(in: segment.range, transform)
+        }
+        guard updated != note else { return }
+        recordUndo(.structural)
+        note = updated
+        markChanged()
+        refreshRangeSelectionMarks()
+    }
+
+    private func refreshRangeSelectionMarks() {
+        let segments = rangeSegments.filter { !$0.range.isEmpty }
+        let marks = segments.compactMap { segment in
+            note.blocks.first { $0.id == segment.blockID }?.content.commonMarks(in: segment.range)
+        }
+        let common = marks.dropFirst().reduce(marks.first ?? []) { $0.intersection($1) }
+        if selectionMarks != common { selectionMarks = common }
     }
 
     // MARK: Slash commands
@@ -401,6 +543,7 @@ public final class NoteEditorModel {
     }
 
     private func restore(_ snapshot: EditHistory.Snapshot) {
+        rangeSelection = nil
         note.blocks = snapshot.blocks
         markChanged()
         syncUndoState()
