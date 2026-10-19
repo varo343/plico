@@ -67,8 +67,12 @@ public final class AppDependencies {
 
     /// Chooses the store from launch arguments:
     /// `--sample-data` seeds an in-memory store (never touches real notes),
-    /// `--in-memory` uses an empty in-memory store.
+    /// `--in-memory` uses an empty in-memory store,
+    /// `--portfolio-demo [--light]` a fictional workspace for screenshots.
     public static func fromLaunchArguments(_ arguments: [String] = ProcessInfo.processInfo.arguments) throws -> AppDependencies {
+        if arguments.contains("--portfolio-demo") {
+            return try PortfolioDemo.dependencies(appearance: arguments.contains("--light") ? .light : .dark)
+        }
         if arguments.contains("--sample-data") {
             return try inMemory(seedSampleData: true)
         }
