@@ -17,3 +17,4 @@ Secrets.xcconfig
 *.keychain
 *.pem
 *.key
+dist/
