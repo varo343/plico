@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 public enum PortfolioDemo {
     public nonisolated static let account = OutlookAccount(id: "demo", address: "giulia.rossi@lumen.example", displayName: "Giulia Rossi")
-    public nonisolated static let configuration = OutlookConfiguration(clientID: "4f6c2a1e-9b3d-4e8a-a7c5-2d1f0b9e6a34", tenant: "organizations")
+    public nonisolated static let configuration = OutlookConfiguration(clientID: "00000000-0000-0000-0000-000000000000", tenant: "organizations")
 
     public static func dependencies(appearance: AppearancePreference, now: Date = .now) throws -> AppDependencies {
         let defaults = UserDefaults(suiteName: "Plico.PortfolioDemo.\(UUID().uuidString)") ?? .standard

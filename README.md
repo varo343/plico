@@ -8,7 +8,15 @@ A native, local-first macOS note-taking app (SwiftUI + SwiftData). Specs:
 
 **Status:** Milestones 0–3 and 5 complete. Outlook (M4) is built and needs your Microsoft app registration to connect. Some interactions still need manual checks; see docs/MILESTONES.md. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
-## Requirements
+## Download
+1. Get `Plico.zip` from the [latest release](https://github.com/varo343/plico/releases/latest) and unzip it.
+2. Move `Plico.app` to Applications.
+3. The app is not notarized by Apple, so the first time **right-click it ▸ Open ▸ Open**
+   (or System Settings ▸ Privacy & Security ▸ Open Anyway).
+
+Requires macOS 14 Sonoma or later. Your notes stay on your Mac; the app has no server and collects no data.
+
+## Requirements (building from source)
 - macOS 14 Sonoma or later (developed on macOS 27 / Xcode 27 / Swift 6.4)
 - Xcode (full install, not only Command Line Tools)
 - No paid Apple Developer account needed for local builds (ad-hoc signing)
@@ -93,3 +101,12 @@ Never put credentials or tokens in source files.
 ## Known limitations
 - `deltaLink` is stored in SwiftData for now. M4 will decide whether it moves to the Keychain (the spec treats it as sensitive).
 - No real-time Outlook updates by design (no backend).
+
+## Security
+- Plico ships with no API keys or secrets. Outlook sign-in is OAuth with PKCE (no client secret);
+  each user registers their own Microsoft app and pastes its client ID in Settings.
+- Tokens are stored only in the macOS Keychain, never in files, logs or this repository.
+- Found a vulnerability? Please open a private report via GitHub ▸ Security ▸ Report a vulnerability, not a public issue.
+
+## License
+[MIT](LICENSE)
