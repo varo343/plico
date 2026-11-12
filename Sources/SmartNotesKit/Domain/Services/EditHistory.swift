@@ -7,10 +7,13 @@ public struct EditHistory {
     public struct Caret: Equatable, Sendable {
         public var blockID: UUID
         public var offset: Int
+        /// The caret was in the block's nested text.
+        public var isDetail: Bool
 
-        public init(blockID: UUID, offset: Int) {
+        public init(blockID: UUID, offset: Int, isDetail: Bool = false) {
             self.blockID = blockID
             self.offset = offset
+            self.isDetail = isDetail
         }
     }
 
@@ -26,6 +29,8 @@ public struct EditHistory {
 
     public enum Kind: Equatable {
         case typing(blockID: UUID)
+        /// Typing in a block's nested text; coalesced separately from its main text.
+        case typingDetail(blockID: UUID)
         case structural
     }
 
@@ -47,7 +52,7 @@ public struct EditHistory {
     /// Call before applying a change, with the state as it is now.
     public mutating func record(before snapshot: Snapshot, kind: Kind, at time: Date) {
         redoStack.removeAll()
-        if case .typing = kind, kind == lastKind, let lastTime, time.timeIntervalSince(lastTime) < coalescingInterval {
+        if kind != .structural, kind == lastKind, let lastTime, time.timeIntervalSince(lastTime) < coalescingInterval {
             self.lastTime = time
             return
         }

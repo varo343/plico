@@ -85,7 +85,8 @@ import Testing
         clock.advance(10)
         editor.toggleChecked(editor.note.blocks[1].id)
         notes.flush()
-        #expect(lines().map(\.isChecked) == [true, true, false])
+        // Checked rows move to the bottom of their list, in the preview too.
+        #expect(lines().map(\.isChecked) == [true, false, true])
     }
 
     @Test func dayRollsOverAtMidnight() throws {

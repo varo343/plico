@@ -10,15 +10,13 @@ struct SlashMenuView: View {
         if let menu = model.slashMenu {
             SNFloatingSurface {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(menu.query.isEmpty ? "TURN INTO" : "TURN INTO · /\(menu.query)".uppercased())
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(0.6)
-                        .foregroundStyle(SNColor.textSecondary)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 5)
-                        .padding(.bottom, 3)
                     ForEach(Array(menu.commands.enumerated()), id: \.element.id) { index, command in
+                        // A header starts each group: block kinds, nested text, then tags.
+                        if index == 0 || command.section != menu.commands[index - 1].section {
+                            header(command.section.title, query: index == 0 ? menu.query : "")
+                        }
                         row(command, isHighlighted: index == menu.highlighted)
+                            .onHover { if $0 { model.highlightSlashCommand(at: index) } }
                     }
                     Text("↑↓ choose · ↩ apply · esc close")
                         .font(.system(size: 10))
@@ -28,6 +26,7 @@ struct SlashMenuView: View {
                         .padding(.bottom, 3)
                 }
                 .frame(width: 230, alignment: .leading)
+                .menuHighlight(on: menu.commands.indices.contains(menu.highlighted) ? menu.commands[menu.highlighted].id : nil)
             }
             .fixedSize()
             .modifier(PopIn())
@@ -36,13 +35,23 @@ struct SlashMenuView: View {
         }
     }
 
+    private func header(_ title: String, query: String) -> some View {
+        Text(query.isEmpty ? title : "\(title) · /\(query)".uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .tracking(0.6)
+            .foregroundStyle(SNColor.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.top, 5)
+            .padding(.bottom, 3)
+    }
+
     private func row(_ command: SlashCommand, isHighlighted: Bool) -> some View {
         let innerRadius = SNFloatingSurface<EmptyView>.radius - SNFloatingSurface<EmptyView>.padding
         return Button { model.applySlashCommand(command) } label: {
             HStack(spacing: SNSpacing.xs) {
-                Image(systemName: command.type.symbol)
+                Image(systemName: command.symbol)
                     .font(.system(size: 12, weight: .medium))
-                    .iconMotion(for: command.type.symbol, on: isHighlighted)
+                    .iconMotion(for: command.symbol, on: isHighlighted)
                     .frame(width: 24, height: 22)
                     .background(SNColor.canvas, in: RoundedRectangle(cornerRadius: 6))
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(SNColor.borderSubtle))
@@ -53,8 +62,8 @@ struct SlashMenuView: View {
             .foregroundStyle(SNColor.textPrimary)
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .background(isHighlighted ? SNColor.borderSubtle.opacity(0.85) : .clear, in: RoundedRectangle(cornerRadius: innerRadius))
             .contentShape(RoundedRectangle(cornerRadius: innerRadius))
+            .menuHighlightRow(command.id)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(command.title)

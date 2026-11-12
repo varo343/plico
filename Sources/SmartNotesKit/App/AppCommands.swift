@@ -63,6 +63,36 @@ public struct AppCommands: Commands {
             // ⌃⌘↑/↓ as in Apple Notes; plain arrow shortcuts stay with text navigation.
             Button("Move Block Up") { app?.notes.editor?.moveBlock(by: -1) }.keyboardShortcut(.upArrow, modifiers: [.command, .control])
             Button("Move Block Down") { app?.notes.editor?.moveBlock(by: 1) }.keyboardShortcut(.downArrow, modifiers: [.command, .control])
+            // Also ⌥-drag a row's grip, or right click ▸ Duplicate.
+            Button("Duplicate Row") { app?.notes.editor?.duplicateBlock() }.keyboardShortcut("d", modifiers: [.command, .shift])
+            Divider()
+            // Opens the block's nested text, or closes it when the caret is inside.
+            Button("Nested Text") { app?.notes.editor?.toggleNestedText() }.keyboardShortcut("n", modifiers: [.command, .option])
+            Button("Insert Image…") { app?.notes.editor?.chooseImages() }.keyboardShortcut("i", modifiers: [.command, .option])
+            Divider()
+            // Two columns side by side; the first move right starts the right one.
+            Button("Move to Right Column") { app?.notes.editor?.moveSelection(toColumn: 1) }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
+            Button("Move to Left Column") { app?.notes.editor?.moveSelection(toColumn: 0) }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .control])
+            Divider()
+            // Lists only; with several rows selected, just those rows.
+            Menu("Sort Rows") {
+                Section("Severity") {
+                    Button(RowSortOrder.severity.title(reversed: false)) { app?.notes.editor?.sortRows(by: .severity) }
+                        .keyboardShortcut("s", modifiers: [.command, .option])
+                    Button(RowSortOrder.severity.title(reversed: true)) { app?.notes.editor?.sortRows(by: .severity, reversed: true) }
+                        .keyboardShortcut("s", modifiers: [.command, .option, .shift])
+                }
+                Section("Completion") {
+                    Button(RowSortOrder.completion.title(reversed: false)) { app?.notes.editor?.sortRows(by: .completion) }
+                    Button(RowSortOrder.completion.title(reversed: true)) { app?.notes.editor?.sortRows(by: .completion, reversed: true) }
+                }
+            }
+            Toggle("Move Checked Rows Down", isOn: Binding(
+                get: { app?.notes.movesCheckedRowsDown ?? true },
+                set: { app?.notes.movesCheckedRowsDown = $0 }
+            ))
         }
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { app?.destination = .settings }

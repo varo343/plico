@@ -12,6 +12,9 @@ public final class AppDependencies {
     public let outlookSession: OutlookSession
     public let outlookPreferences: OutlookPreferences
     public let isInMemory: Bool
+    /// Reads the titles of pasted links. Only the real store goes online for
+    /// them: tests and demos stay offline.
+    public var linkTitles: (any LinkTitleFetching)?
 
     public init(modelContainer: ModelContainer, settings: SettingsStore, isInMemory: Bool,
                 outlookSession: OutlookSession? = nil, outlookPreferences: OutlookPreferences = OutlookPreferences()) {
@@ -42,7 +45,9 @@ public final class AppDependencies {
     public static func live() throws -> AppDependencies {
         let url = try PersistenceController.defaultStoreURL()
         let container = try PersistenceController.makeContainer(.onDisk(url))
-        return AppDependencies(modelContainer: container, settings: UserDefaultsSettingsStore(), isInMemory: false)
+        let dependencies = AppDependencies(modelContainer: container, settings: UserDefaultsSettingsStore(), isInMemory: false)
+        dependencies.linkTitles = WebLinkTitleFetcher()
+        return dependencies
     }
 
     /// Throwaway store for tests, previews and demos. Settings are isolated too.

@@ -34,7 +34,10 @@ final class EditorHarness {
     /// back to its run loop and dispatch queue. Waiting on state rather than a
     /// fixed delay keeps the tests reliable when the suite runs in parallel.
     func pump() async {
-        let deadline = ContinuousClock.now + .seconds(5)
+        // Generous: under a loaded parallel run the main actor can be busy for
+        // over 5 s, and giving up early let tests index text views not yet built.
+        // A settled UI returns at once, so this costs nothing normally.
+        let deadline = ContinuousClock.now + .seconds(20)
         repeat {
             try? await Task.sleep(for: .milliseconds(10))
         } while !isSettled && ContinuousClock.now < deadline
@@ -46,20 +49,42 @@ final class EditorHarness {
               views.map(\.string) == plainBlocks,
               !views.contains(where: { $0.pendingFocusOffset != nil })
         else { return false }
+        let nested = nestedTextViews
+        guard nested.count == editor.expandedDetails.count,
+              nested.allSatisfy({ view in editor.note.blocks.first { $0.id == view.blockID }?.detail.plainText == view.string })
+        else { return false }
         if let request = editor.focusRequest, let index = editor.note.blocks.firstIndex(where: { $0.id == request.blockID }) {
+            if request.isDetail { return focused === nested.first { $0.blockID == request.blockID } }
             return focused === views[index]
         }
         return true
     }
 
-    /// Block text views in top-to-bottom order.
+    /// Block text views in top-to-bottom order (nested text excluded).
     var textViews: [BlockNSTextView] {
+        allTextViews.filter { !$0.isNestedText }
+    }
+
+    /// Text views of expanded nested text, top to bottom.
+    var nestedTextViews: [BlockNSTextView] {
+        allTextViews.filter(\.isNestedText)
+    }
+
+    private var allTextViews: [BlockNSTextView] {
         func collect(_ view: NSView) -> [BlockNSTextView] {
             (view as? BlockNSTextView).map { [$0] } ?? view.subviews.flatMap(collect)
         }
+        // In the note's order (left column, then right), else top to bottom.
+        let order = Dictionary(editor.note.blocks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         return collect(window.contentView!).sorted {
-            $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY
+            if let a = $0.blockID.flatMap({ order[$0] }), let b = $1.blockID.flatMap({ order[$0] }), a != b { return a < b }
+            return $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY
         }
+    }
+
+    /// A block's own text view (not its nested text).
+    func textView(for blockID: UUID) -> BlockNSTextView? {
+        textViews.first { $0.blockID == blockID }
     }
 
     var focused: BlockNSTextView? { window.firstResponder as? BlockNSTextView }
@@ -332,8 +357,8 @@ final class EditorHarness {
         func collect(_ view: NSView) -> [BlockNSTextView] {
             (view as? BlockNSTextView).map { [$0] } ?? view.subviews.flatMap(collect)
         }
-        // Wait for the editor to lay out (parallel suite: no fixed delay).
-        let deadline = ContinuousClock.now + .seconds(5)
+        // Wait for the editor to lay out (parallel suite: no fixed delay; generous, see pump()).
+        let deadline = ContinuousClock.now + .seconds(20)
         while collect(window.contentView!).filter({ $0.bounds.width > 0 }).count < 5, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(30))
         }
@@ -361,7 +386,8 @@ final class EditorHarness {
         let h = try await EditorHarness.make(blocks: [(.paragraph, .empty)])
         h.click(block: 0, at: 0)
         await h.type("/")
-        #expect(h.editor.slashMenu?.commands.count == SlashCommand.all.count)
+        // Everything except "Remove tag": the block has no tag.
+        #expect(h.editor.slashMenu?.commands.count == SlashCommand.all.count - 1)
         await h.type("che")
         #expect(h.editor.slashMenu?.commands.map(\.name) == ["checkbox"])
         await h.pressReturn()
@@ -470,6 +496,44 @@ final class EditorHarness {
         #expect(h.textViews[0].selectedRange() == NSRange(location: 0, length: 5))
     }
 
+    /// Regression: in a two-column note, a drag in the right column matched the
+    /// left column's rows at the same height first and selected across both.
+    @Test func dragInOneColumnSelectsOnlyThatColumn() async throws {
+        let h = try await EditorHarness.make(blocks: ["Left one", "Left two", "Left three", "Right one", "Right two", "Right three"]
+            .map { (.paragraph, RichText(plain: $0)) })
+        let right = h.editor.note.blocks.suffix(3).map(\.id)
+        h.editor.moveBlocks(right, toColumn: 1)
+        await h.pump()
+        #expect(h.editor.note.blocks.map(\.column) == [0, 0, 0, 1, 1, 1])
+
+        drag(h, from: (3, 0), to: (4, 5))
+        #expect(h.editor.rangeSegments.map(\.blockID) == [right[0], right[1]])
+        #expect(h.editor.rangeSegments.map(\.range) == [0..<9, 0..<5])
+
+        // Past the column's last row: its end, still without the left column.
+        drag(h, from: (4, 0), to: (0, 2))
+        #expect(h.editor.rangeSegments.map(\.blockID) == [right[0], right[1]])
+    }
+
+    /// ⌘C/⌘X go through the Edit menu, which asks the text view first. The view
+    /// holding a multi-block selection has an empty selection of its own, so
+    /// NSTextView alone would disable Copy and the shortcut did nothing.
+    @Test func copyAndCutMenusAreEnabledForAMultiBlockSelection() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "One")), (.paragraph, RichText(plain: "Two"))])
+        drag(h, from: (0, 0), to: (1, 3))
+        let view = try #require(h.focused)
+        #expect(view.selectedRange().length == 0)
+        for action in [#selector(NSText.copy(_:)), #selector(NSText.cut(_:)), #selector(NSText.delete(_:))] {
+            let item = NSMenuItem(title: "", action: action, keyEquivalent: "")
+            #expect(view.validateUserInterfaceItem(item), "\(action) disabled")
+        }
+        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        h.textViews.forEach { $0.pasteboard = board }
+        #expect(NSApp.sendAction(#selector(NSText.copy(_:)), to: view, from: nil))
+        #expect(board.string(forType: .string) == "One\nTwo")
+    }
+
     @Test func copyingAMultiBlockSelectionPastesBackAsBlocks() async throws {
         let h = try await EditorHarness.make(blocks: [
             (.paragraph, RichText(plain: "Intro")), (.checklistItem, RichText(plain: "Task")), (.paragraph, RichText(plain: "")),
@@ -495,5 +559,246 @@ final class EditorHarness {
         #expect(h.editor.rangeSelection == nil)
         h.focused?.selectAll(nil)
         #expect(h.editor.rangeSegments.map(\.range) == [0..<3, 0..<3])
+    }
+}
+
+/// Regression: the tag control's anchor lost its view when SwiftUI rebuilt the
+/// row, so clicking a tag silently did nothing.
+@MainActor
+@Suite(.serialized) struct TagControlHostingTests {
+    private func clickRight(of view: NSView, in window: NSWindow, by dx: CGFloat) async {
+        let frame = view.convert(view.bounds, to: nil)
+        let point = NSPoint(x: frame.maxX + dx, y: frame.midY)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            window.sendEvent(event)
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        try? await Task.sleep(for: .milliseconds(200))
+    }
+
+    @Test func clickingATagOpensThePickerAfterTheRowChanges() async throws {
+        let h = try await EditorHarness.make(blocks: [(.bulletItem, RichText(plain: "Milk")), (.bulletItem, RichText(plain: "Eggs"))])
+        h.window.makeKeyAndOrderFront(nil)
+        h.editor.setBlockTag(.priority(.high), blockID: h.editor.note.blocks[0].id)
+        await h.pump()
+        // The picker opens asynchronously, and under a busy full test run the
+        // row can still be settling (the badge just appeared) when the click is
+        // aimed: a missed click is retried. A broken anchor never opens it.
+        for _ in 0..<3 where h.window.childWindows?.isEmpty ?? true {
+            await clickRight(of: h.textViews[0], in: h.window, by: 22)
+            for _ in 0..<10 where h.window.childWindows?.isEmpty ?? true {
+                try await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        #expect(h.window.childWindows?.count == 1)
+    }
+}
+
+@MainActor
+@Suite(.serialized) struct NestedTextHostingTests {
+    @Test func writingNestedTextKeepsReturnInsideIt() async throws {
+        let h = try await EditorHarness.make(blocks: [(.checklistItem, RichText(plain: "Email marketing")), (.paragraph, RichText(plain: "next"))])
+        let id = h.editor.note.blocks[0].id
+        h.click(block: 0, at: 5)
+        h.editor.updateSelection(blockID: id, range: 5..<5)
+        h.editor.toggleNestedText()
+        await h.pump()
+        #expect(h.nestedTextViews.count == 1)
+        #expect(h.focused === h.nestedTextViews.first)
+
+        await h.type("Hi")
+        await h.pressReturn()
+        await h.type("Bye")
+        #expect(h.editor.note.blocks[0].detail.plainText == "Hi\nBye")
+        #expect(h.plainBlocks == ["Email marketing", "next"]) // no new block
+
+        // ↑ from the first line goes back to the block; ↓ from the block comes back in.
+        h.nestedTextViews[0].setSelectedRange(NSRange(location: 1, length: 0))
+        await h.pressUp()
+        #expect(h.focused === h.textViews[0])
+        await h.pressDown()
+        #expect(h.focused === h.nestedTextViews.first)
+
+        // Hiding keeps the text; it is saved with the note.
+        h.editor.toggleDetail(id)
+        await h.pump()
+        #expect(h.nestedTextViews.isEmpty)
+        h.editor.flush()
+        #expect(try h.deps.notes.note(id: h.editor.note.id)?.blocks[0].detail.plainText == "Hi\nBye")
+    }
+
+    @Test func backspaceInEmptyNestedTextClosesIt() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "Line"))])
+        let id = h.editor.note.blocks[0].id
+        h.editor.toggleDetail(id)
+        await h.pump()
+        #expect(h.focused === h.nestedTextViews.first)
+        await h.pressBackspace()
+        #expect(h.nestedTextViews.isEmpty)
+        #expect(h.focused === h.textViews[0])
+        #expect(h.plainBlocks == ["Line"])
+    }
+
+    @Test func pastingMarkdownIntoNestedTextStaysNested() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "Email"))])
+        let id = h.editor.note.blocks[0].id
+        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("Ciao **team**,\n\n- punto uno\n- punto due", forType: .string)
+        h.editor.toggleDetail(id)
+        await h.pump()
+        h.nestedTextViews[0].pasteboard = board
+        h.focused?.paste(nil)
+        await h.pump()
+        #expect(h.plainBlocks == ["Email"])
+        let detail = h.editor.note.blocks[0].detail
+        #expect(detail.plainText == "Ciao team,\n\n• punto uno\n• punto due")
+        #expect(detail.runs.contains(TextRun("team", marks: [.bold])))
+        h.focused?.undo(nil); await h.pump()
+        #expect(h.editor.note.blocks[0].detail.isEmpty)
+    }
+
+    @Test func slashNestedOpensNestedText() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "Task "))])
+        h.click(block: 0, at: 5)
+        await h.type("/nested ")
+        #expect(h.plainBlocks == ["Task "])
+        #expect(h.focused === h.nestedTextViews.first)
+    }
+
+    /// Each nested row's grip sits beside its first line, so the text view
+    /// reports where those lines are, and again when rows change.
+    @Test func nestedTextReportsWhereItsRowsStart() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "Email"))])
+        let id = h.editor.note.blocks[0].id
+        h.editor.setDetail(RichText(plain: "Ciao\n\n• Saluti\n    a tutti"), ofBlock: id)
+        h.editor.toggleDetail(id)
+        await h.pump()
+        let view = try #require(h.nestedTextViews.first)
+        #expect(view.onRowFrames != nil)
+        #expect(h.textViews.allSatisfy { $0.onRowFrames == nil }) // block text has no rows
+        let frames = view.rowFrames()
+        #expect(frames.map(\.range) == [0..<4, 6..<26])
+        #expect(frames.count == 2 && frames[0].frame.height > 0 && frames[1].frame.minY > frames[0].frame.maxY)
+    }
+}
+
+/// Holds each title until the test answers, to see the link before and after.
+private actor HeldLinkTitles: LinkTitleFetching {
+    private var waiting: [CheckedContinuation<String?, Never>] = []
+    private(set) var asked: [URL] = []
+
+    func title(for url: URL) async -> String? {
+        asked.append(url)
+        return await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func answer(_ title: String?) {
+        waiting.forEach { $0.resume(returning: title) }
+        waiting = []
+    }
+}
+
+/// A drag from another app, as AppKit hands it to a drop target.
+@MainActor
+private final class FakeDrag: NSObject, @MainActor NSDraggingInfo {
+    let draggingPasteboard: NSPasteboard
+    let draggingLocation: NSPoint
+    let draggingDestinationWindow: NSWindow?
+    init(pasteboard: NSPasteboard, location: NSPoint, window: NSWindow?) {
+        draggingPasteboard = pasteboard
+        draggingLocation = location
+        draggingDestinationWindow = window
+    }
+    var draggingSourceOperationMask: NSDragOperation { .copy }
+    var draggedImageLocation: NSPoint { draggingLocation }
+    var draggedImage: NSImage? { nil }
+    var draggingSource: Any? { nil }
+    var draggingSequenceNumber: Int { 1 }
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    func enumerateDraggingItems(options enumOpts: NSDraggingItemEnumerationOptions = [], for view: NSView?, classes classArray: [AnyClass],
+                                searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:], using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+    func resetSpringLoading() {}
+}
+
+@MainActor
+@Suite struct LinkPasteTests {
+    private func waitUntil(_ h: EditorHarness, _ condition: () async -> Bool) async {
+        for _ in 0..<500 where !(await condition()) { try? await Task.sleep(for: .milliseconds(10)) }
+        await h.pump()
+    }
+
+    @Test func aPastedAddressShowsANameThenThePageTitle() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "see "))])
+        let titles = HeldLinkTitles()
+        h.editor.linkTitles = titles
+        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("https://example.com/release-notes", forType: .string)
+        h.textViews.forEach { $0.pasteboard = board }
+        h.click(block: 0, at: 4)
+        h.focused?.paste(nil)
+        await waitUntil(h) { await titles.asked.count == 1 }
+        let link = URL(string: "https://example.com/release-notes")!
+        #expect(h.editor.note.blocks[0].content.runs == [TextRun("see "), TextRun("example.com › release notes", link: link)])
+        #expect(await titles.asked == [link])
+
+        await titles.answer("Release Notes 2.0")
+        await waitUntil(h) { h.plainBlocks == ["see Release Notes 2.0"] }
+        #expect(h.editor.note.blocks[0].content.runs == [TextRun("see "), TextRun("Release Notes 2.0", link: link)])
+        // The caret is still right after the link, so typing goes on from there.
+        #expect(h.focused?.selectedRange() == NSRange(location: "see Release Notes 2.0".utf16.count, length: 0))
+        await h.type("!")
+        #expect(h.plainBlocks == ["see Release Notes 2.0!"])
+
+        h.focused?.undo(nil); await h.pump()
+        h.focused?.undo(nil); await h.pump()
+        #expect(h.plainBlocks == ["see "])
+    }
+
+    @Test func aRenamedLinkIsLeftAlone() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: ""))])
+        let titles = HeldLinkTitles()
+        h.editor.linkTitles = titles
+        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("https://example.com/notes", forType: .string)
+        h.textViews.forEach { $0.pasteboard = board }
+        h.click(block: 0, at: 0)
+        h.focused?.paste(nil)
+        await waitUntil(h) { await titles.asked.count == 1 }
+        // The user retypes the link's text before the title arrives.
+        h.select(block: 0, range: 0..<"example.com › notes".utf16.count)
+        await h.type("mine")
+        await titles.answer("Notes")
+        try await Task.sleep(for: .milliseconds(50))
+        await h.pump()
+        #expect(h.plainBlocks == ["mine"])
+    }
+
+    @Test func aLinkDroppedFromABrowserIsNamed() async throws {
+        let h = try await EditorHarness.make(blocks: [(.paragraph, RichText(plain: "ab"))])
+        let board = NSPasteboard(name: .init("SmartNotesTests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.declareTypes([.string, .html], owner: nil)
+        board.setString("https://example.com/notes", forType: .string)
+        board.setString("<a href=\"https://example.com/notes\">Release notes</a>", forType: .html)
+        let target = h.textViews[0]
+        // At the end of the text: right of "ab".
+        let location = target.convert(NSPoint(x: target.bounds.maxX - 2, y: target.bounds.midY), to: nil)
+        #expect(target.performDragOperation(FakeDrag(pasteboard: board, location: location, window: h.window)))
+        await h.pump()
+        #expect(h.editor.note.blocks[0].content.runs
+                == [TextRun("ab"), TextRun("Release notes", link: URL(string: "https://example.com/notes")!)])
     }
 }

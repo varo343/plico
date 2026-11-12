@@ -31,10 +31,13 @@ public enum NoteText {
             .filter { !$0.isEmpty }
     }
 
-    /// Searchable text: title plus all block text, case/diacritic/width folded.
+    /// Searchable text: title plus all block text (nested text included),
+    /// case/diacritic/width folded.
     public static func searchText(title: String, blocks: [NoteBlock]) -> String {
-        let body = blocks.map(\.content.plainText).joined(separator: "\n")
-        return fold(title + "\n" + body)
+        let body = blocks.flatMap { [$0.content.plainText, $0.detail.plainText].filter { !$0.isEmpty } }.joined(separator: "\n")
+        // Tags are searchable too ("high" finds notes with a High item).
+        let tags = Set(blocks.compactMap(\.tag?.label)).sorted().joined(separator: " ")
+        return fold(title + "\n" + body + (tags.isEmpty ? "" : "\n" + tags))
     }
 
     /// Normalization applied to both stored search text and queries, so

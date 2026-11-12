@@ -109,11 +109,15 @@ struct HoverLabel: ViewModifier {
     @State private var anchor = AnchorBox()
     @State private var controller = FloatingPanelController()
     @State private var showTask: Task<Void, Never>?
+    @State private var isHovering = false
 
     func body(content: Content) -> some View {
         content
-            .background(AnchorReader(box: anchor))
+            // Only while hovered: an AppKit view per label (every row has two)
+            // made opening a note and laying it out slower.
+            .background { if isHovering { AnchorReader(box: anchor) } }
             .onHover { hovering in
+                isHovering = hovering
                 showTask?.cancel()
                 if hovering {
                     showTask = Task {

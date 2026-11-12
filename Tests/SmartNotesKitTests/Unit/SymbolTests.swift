@@ -14,10 +14,18 @@ import Testing
         names += FontFamilyPreset.allCases.map(\.symbol)
         names += OutlookImportScope.allCases.map(\.symbol)
         names += SettingsPane.allCases.map(\.symbol)
-        names += ["pin", "pin.fill", "pin.slash", "trash", "xmark.bin", "plus.square.on.square", "sidebar.left", "flag",
+        names += ["pin", "pin.fill", "pin.slash", "trash", "plus.square.on.square", "sidebar.left", "flag",
                   "flag.checkered", "calendar", "arrow.up.arrow.down", "arrow.clockwise", "arrow.uturn.backward",
                   "square.and.pencil", "envelope", "envelope.open", "xmark.circle", "square.and.arrow.up", "link",
-                  "ellipsis", "checkmark", "checkmark.square.fill", "square", "magnifyingglass", "sunrise", "calendar.badge.clock"]
+                  "ellipsis", "checkmark", "checkmark.square.fill", "square", "magnifyingglass", "sunrise", "calendar.badge.clock",
+                  "tag", "tag.slash", "exclamationmark", "exclamationmark.2", "exclamationmark.3",
+                  "chevron.right", "text.alignleft", "text.badge.plus",
+                  "arrow.up.arrow.down", "checkmark.circle", "arrow.down.to.line", "arrow.down", "arrow.up", "circle",
+                  "rectangle.split.2x1", "photo", "photo.badge.exclamationmark",
+                  "plus.square.on.square", "doc.on.doc", "doc.on.clipboard", "clipboard", "scissors",
+                  "rectangle.righthalf.inset.filled", "rectangle.lefthalf.inset.filled", "arrow.up.left.and.arrow.down.right",
+                  "1.magnifyingglass", "rectangle.portrait.and.arrow.right", "plus.circle.fill", "arrow.up.forward.app"]
+        names += SlashCommand.all.map(\.symbol)
         let missing = Set(names).filter { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil }
         #expect(missing.isEmpty, "Missing SF Symbols: \(missing.sorted())")
     }

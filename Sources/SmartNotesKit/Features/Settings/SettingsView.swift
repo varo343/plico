@@ -37,7 +37,6 @@ public enum SettingsPane: String, CaseIterable, Identifiable {
 /// Settings categories, shown in the list column like any other section.
 struct SettingsPaneList: View {
     @Binding var selection: SettingsPane
-    @State private var hovered: SettingsPane?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -55,23 +54,22 @@ struct SettingsPaneList: View {
                     .padding(.vertical, 9)
                     .background {
                         let shape = RoundedRectangle(cornerRadius: SNRadius.standard)
-                        if selection == pane {
-                            shape.fill(SNColor.card)
-                                .overlay(shape.strokeBorder(SNColor.borderSubtle, lineWidth: 1))
-                                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-                        } else if hovered == pane {
-                            shape.fill(SNColor.borderSubtle.opacity(0.45))
-                        }
+                        // The hover highlight is the list's (`glidingHover`), under this card.
+                        shape.fill(SNColor.card)
+                            .overlay(shape.strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+                            .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+                            .opacity(selection == pane ? 1 : 0)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { if $0 { hovered = pane } else if hovered == pane { hovered = nil } }
+                .glidingHoverRow(pane)
                 .accessibilityAddTraits(selection == pane ? .isSelected : [])
             }
             .padding(.horizontal, SNSpacing.xs)
             Spacer()
         }
+        .glidingHover()
     }
 }
 

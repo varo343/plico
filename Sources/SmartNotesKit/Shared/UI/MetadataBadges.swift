@@ -31,6 +31,7 @@ struct SNBadge: View {
     let text: String
     var tone: Tone = .neutral
     var size: Size = .regular
+    @Environment(\.snBadgeHovered) private var isHovered
 
     var body: some View {
         Text(text)
@@ -38,7 +39,12 @@ struct SNBadge: View {
             .foregroundStyle(tone == .neutral ? SNColor.textSecondary : SNColor.textPrimary)
             .padding(.horizontal, size == .small ? 7 : 9)
             .padding(.vertical, size == .small ? 2 : 3.5)
-            .background(WobblyCapsuleShape(variant: tone.rawValue, amplitude: 2.2).fill(tone.fill))
+            .background {
+                let shape = WobblyCapsuleShape(variant: tone.rawValue, amplitude: 2.2)
+                // Hover only lightens the fill; size, text and position stay put.
+                shape.fill(tone.fill).overlay(shape.fill(Color.white.opacity(isHovered ? 0.16 : 0)))
+            }
+            .snAnimation(SNMotion.hover, value: isHovered)
             .rotationEffect(.degrees(tone.tilt))
             .fixedSize()
             .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -121,3 +127,51 @@ extension LocalDay {
     }
 }
 
+
+/// A block's tag: priorities in their colors, custom tags in the quiet neutral tone.
+struct BlockTagBadge: View {
+    let tag: BlockTag
+
+    var body: some View {
+        switch tag {
+        case .priority(let priority): PriorityBadge(priority, size: .small)
+        case .custom(let name): SNBadge(text: name, size: .small).accessibilityLabel("Tag \(name)")
+        }
+    }
+}
+
+/// Set by `SNBadgeButtonStyle` while the pointer is over a clickable badge.
+private struct BadgeHoverKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var snBadgeHovered: Bool {
+        get { self[BadgeHoverKey.self] }
+        set { self[BadgeHoverKey.self] = newValue }
+    }
+}
+
+/// A clickable badge: no highlight shape around it; hover lightens its fill.
+struct SNBadgeButtonStyle: ButtonStyle {
+    /// Keeps the hover look while the badge's menu is open.
+    var isActive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        SNBadgeButtonBody(configuration: configuration, isActive: isActive)
+    }
+}
+
+private struct SNBadgeButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let isActive: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        configuration.label
+            .environment(\.snBadgeHovered, isHovered || isActive)
+            .contentShape(Rectangle())
+            .snPressEffect(configuration.isPressed)
+            .onHover { isHovered = $0 }
+    }
+}

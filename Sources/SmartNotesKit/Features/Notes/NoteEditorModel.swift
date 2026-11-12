@@ -9,14 +9,17 @@ public struct FocusRequest: Equatable, Sendable {
     public var length: Int
     /// False when the caret should not pull the view (e.g. opening a note).
     public var scrollsIntoView: Bool
+    /// The caret goes into the block's nested text instead of its main text.
+    public var isDetail: Bool
     public var token = UUID()
 
     /// Use `Int.max` to place the caret at the end of the block.
-    public init(blockID: UUID, offset: Int, length: Int = 0, scrollsIntoView: Bool = true) {
+    public init(blockID: UUID, offset: Int, length: Int = 0, scrollsIntoView: Bool = true, isDetail: Bool = false) {
         self.blockID = blockID
         self.offset = offset
         self.length = length
         self.scrollsIntoView = scrollsIntoView
+        self.isDetail = isDetail
     }
 }
 
@@ -24,6 +27,8 @@ public struct FocusRequest: Equatable, Sendable {
 public struct BlockSelection: Equatable, Sendable {
     public var blockID: UUID
     public var range: Range<Int>
+    /// The selection is in the block's nested text.
+    public var isDetail = false
 }
 
 /// The open slash menu: which block, the typed "/query" and the choices.
@@ -37,12 +42,20 @@ public struct SlashMenuState: Equatable {
     public var anchor: CGRect?
 }
 
+/// Asks a block's tag control to open its picker (e.g. from "/custom").
+public struct TagPickerRequest: Equatable, Sendable {
+    public var blockID: UUID
+    public var token = UUID()
+}
+
 /// State for the ⌘K link sheet.
 public struct LinkDraft: Equatable, Sendable {
     public var blockID: UUID
     public var range: Range<Int>
     public var url: String
     public var hasExistingLink: Bool
+    /// The link is in the block's nested text.
+    public var isDetail = false
 }
 
 /// Editing session for one note: holds the working copy, applies edits, keeps
@@ -67,7 +80,10 @@ public final class NoteEditorModel {
     /// Text selected across several blocks (nil when the selection is inside one block).
     public private(set) var rangeSelection: BlockRangeSelection?
     public var linkDraft: LinkDraft?
+    public var tagPickerRequest: TagPickerRequest?
     public private(set) var slashMenu: SlashMenuState?
+    /// Blocks whose nested text is shown. Not saved: notes open collapsed.
+    public private(set) var expandedDetails: Set<UUID> = []
     /// A dismissed (Esc) "/" stays dismissed until the caret leaves it.
     @ObservationIgnored private var dismissedSlash: (blockID: UUID, location: Int)?
     /// Keeps the formatting bar visible without a selection (toolbar toggle).
@@ -82,6 +98,14 @@ public final class NoteEditorModel {
     @ObservationIgnored private var history = EditHistory()
     /// Updated on every caret move; not observed to avoid re-rendering per keystroke.
     @ObservationIgnored private(set) var selection: BlockSelection?
+    /// Checked rows move to the bottom of their list (a preference, see `NotesModel`).
+    @ObservationIgnored public var movesCheckedRowsDown = true
+    /// The row whose menu is open (right click): it's shown selected.
+    public private(set) var menuRowID: UUID?
+    /// Asks the user for picture files (an open panel); set by the editor view.
+    @ObservationIgnored public var imagePicker: (@MainActor () async -> [NoteImage])?
+    /// Reads page titles for pasted links named after their address; nil reads none.
+    @ObservationIgnored public var linkTitles: (any LinkTitleFetching)?
 
     public init(
         note: Note,
@@ -111,8 +135,9 @@ public final class NoteEditorModel {
             return BlockEditing.copiedParagraphs(note, selection: rangeSelection).flatMap(\.content.runs)
         }
         guard let selection, let block = note.blocks.first(where: { $0.id == selection.blockID }) else { return [] }
-        let range = selection.range.isEmpty ? 0..<block.content.utf16Length : selection.range
-        return block.content.split(atUTF16Offset: range.lowerBound).tail.split(atUTF16Offset: range.count).head.runs
+        let text = selection.isDetail ? block.detail : block.content
+        let range = selection.range.isEmpty ? 0..<text.utf16Length : selection.range
+        return text.split(atUTF16Offset: range.lowerBound).tail.split(atUTF16Offset: range.count).head.runs
     }
 
     public var activeBlock: NoteBlock? {
@@ -155,36 +180,38 @@ public final class NoteEditorModel {
 
     /// Toggles `mark` on a non-empty range. (Empty selections change typing
     /// attributes in the text view instead.)
-    public func toggleMark(_ mark: InlineMark, blockID: UUID, range: Range<Int>) {
-        if rangeSelection != nil {
+    public func toggleMark(_ mark: InlineMark, blockID: UUID, range: Range<Int>, inDetail: Bool = false) {
+        if rangeSelection != nil, !inDetail {
             toggleMarkInRangeSelection(mark)
             return
         }
         guard !range.isEmpty else { return }
-        transformContent(of: blockID, keepingSelection: range) { $0.toggling(mark, in: range) }
+        transformContent(of: blockID, inDetail: inDetail, keepingSelection: range) { $0.toggling(mark, in: range) }
     }
 
     /// Font family preset. With no selection, applies to the whole block.
     public func setFontFamily(_ family: FontFamilyPreset?) {
         if rangeSelection != nil { return transformRangeSelection { $0.fontFamily = family } }
-        guard let (id, range) = formattingTarget() else { return }
-        transformContent(of: id, keepingSelection: selection?.range) { $0.transformingRuns(in: range) { $0.fontFamily = family } }
+        guard let (id, range, inDetail) = formattingTarget() else { return }
+        transformContent(of: id, inDetail: inDetail, keepingSelection: selection?.range) { $0.transformingRuns(in: range) { $0.fontFamily = family } }
     }
 
     /// Text size preset. With no selection, applies to the whole block.
     public func setFontSize(_ size: FontSizePreset?) {
         if rangeSelection != nil { return transformRangeSelection { $0.fontSize = size } }
-        guard let (id, range) = formattingTarget() else { return }
-        transformContent(of: id, keepingSelection: selection?.range) { $0.transformingRuns(in: range) { $0.fontSize = size } }
+        guard let (id, range, inDetail) = formattingTarget() else { return }
+        transformContent(of: id, inDetail: inDetail, keepingSelection: selection?.range) { $0.transformingRuns(in: range) { $0.fontSize = size } }
     }
 
     // MARK: Links
 
-    public func beginLinkEditing(blockID: UUID, range: Range<Int>) {
+    public func beginLinkEditing(blockID: UUID, range: Range<Int>, inDetail: Bool = false) {
         guard let index = index(of: blockID) else { return }
-        let existing = note.blocks[index].content.commonLink(in: range)
+        let text = inDetail ? note.blocks[index].detail : note.blocks[index].content
+        let existing = text.commonLink(in: range)
         linkError = nil
-        linkDraft = LinkDraft(blockID: blockID, range: range, url: existing?.absoluteString ?? "", hasExistingLink: existing != nil)
+        linkDraft = LinkDraft(blockID: blockID, range: range, url: existing?.absoluteString ?? "", hasExistingLink: existing != nil,
+                              isDetail: inDetail)
     }
 
     /// Applies the draft. Returns false (and sets `linkError`) for invalid or unsafe URLs.
@@ -201,9 +228,11 @@ public final class NoteEditorModel {
             // No selection: insert the address itself as linked text.
             let text = RichText(runs: [TextRun(url.absoluteString, link: url)])
             let end = draft.range.lowerBound + text.utf16Length
-            transformContent(of: draft.blockID, keepingSelection: end..<end) { $0.replacing(draft.range, with: text) }
+            transformContent(of: draft.blockID, inDetail: draft.isDetail, keepingSelection: end..<end) { $0.replacing(draft.range, with: text) }
         } else {
-            transformContent(of: draft.blockID, keepingSelection: draft.range) { $0.transformingRuns(in: draft.range) { $0.link = url } }
+            transformContent(of: draft.blockID, inDetail: draft.isDetail, keepingSelection: draft.range) {
+                $0.transformingRuns(in: draft.range) { $0.link = url }
+            }
         }
         return true
     }
@@ -211,22 +240,165 @@ public final class NoteEditorModel {
     public func removeLink() {
         guard let draft = linkDraft else { return }
         linkDraft = nil
-        transformContent(of: draft.blockID, keepingSelection: draft.range) { $0.transformingRuns(in: draft.range) { $0.link = nil } }
+        transformContent(of: draft.blockID, inDetail: draft.isDetail, keepingSelection: draft.range) {
+            $0.transformingRuns(in: draft.range) { $0.link = nil }
+        }
     }
 
     public func cancelLinkEditing() {
         linkDraft = nil
         linkError = nil
-        if let selection { focus(selection.blockID, offset: selection.range.lowerBound, length: selection.range.count) }
+        if let selection {
+            focus(selection.blockID, offset: selection.range.lowerBound, length: selection.range.count, isDetail: selection.isDetail)
+        }
     }
 
     // MARK: Block commands
 
+    /// Checking a row also moves it below its list's open rows (unchecking
+    /// brings it back up) when `movesCheckedRowsDown` is on. One undo step.
     public func toggleChecked(_ id: UUID) {
         guard let index = index(of: id), note.blocks[index].type == .checklistItem else { return }
         recordUndo(.structural)
         note.blocks[index].isChecked.toggle()
+        if movesCheckedRowsDown, let settled = BlockEditing.settlingChecked(note, blockID: id) { note = settled }
         markChanged()
+    }
+
+    /// Sorts the note's lists, or only the selected rows when several are selected.
+    public func sortRows(by order: RowSortOrder, reversed: Bool = false) {
+        let scope = rangeSelection.map { Set(BlockEditing.segments(of: $0, in: note).map(\.blockID)) }
+        guard let sorted = BlockEditing.sortRows(note, by: order, reversed: reversed, within: scope) else { return }
+        recordUndo(.structural)
+        note = sorted
+        rangeSelection = nil
+        markChanged()
+        if let id = activeBlockID { refocusBlock(id) }
+    }
+
+    /// Sets or clears (`nil`) a block's tag. Defaults to the block with the caret.
+    public func setBlockTag(_ tag: BlockTag?, blockID: UUID? = nil) {
+        guard let id = blockID ?? activeBlockID else { return }
+        // Choosing the tag the block already has still returns the caret to it.
+        if !applyKeepingCaret(on: id, { BlockEditing.setTag($0, blockID: id, to: tag) }) { refocusBlock(id) }
+    }
+
+    /// Opens the tag picker next to the block.
+    public func requestTagPicker(blockID: UUID? = nil) {
+        guard let id = blockID ?? activeBlockID, index(of: id) != nil else { return }
+        tagPickerRequest = TagPickerRequest(blockID: id)
+    }
+
+    /// Custom tags already used in this note, most used first, for quick reuse.
+    public var customTagSuggestions: [String] {
+        var counts: [String: Int] = [:]
+        for block in note.blocks {
+            if case .custom(let name)? = block.tag { counts[name, default: 0] += 1 }
+        }
+        return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.localizedCompare($1.key) == .orderedAscending }.map(\.key)
+    }
+
+    /// Puts the caret back in the block (e.g. after closing the tag picker).
+    public func refocusBlock(_ id: UUID) {
+        let current = selection?.blockID == id ? selection : nil
+        let range = current?.range ?? 0..<0
+        focus(id, offset: range.lowerBound, length: range.count, isDetail: current?.isDetail ?? false)
+    }
+
+    // MARK: Nested text
+
+    public func isDetailExpanded(_ id: UUID) -> Bool {
+        expandedDetails.contains(id)
+    }
+
+    /// The disclosure button: shows or hides a block's nested text. Showing a
+    /// block without any puts the caret in it, ready to write.
+    public func toggleDetail(_ id: UUID) {
+        guard let index = index(of: id) else { return }
+        if expandedDetails.contains(id) {
+            collapseDetail(id)
+        } else {
+            expandedDetails.insert(id)
+            if note.blocks[index].detail.isEmpty { focus(id, offset: 0, isDetail: true) }
+        }
+    }
+
+    /// Format ▸ Nested Text (⌥⌘N): from a block, opens its nested text and puts
+    /// the caret there; from inside the nested text, hides it and goes back.
+    public func toggleNestedText() {
+        guard let id = activeBlockID, let index = index(of: id) else { return }
+        if selection?.blockID == id, selection?.isDetail == true {
+            collapseDetail(id)
+        } else {
+            expandedDetails.insert(id)
+            focus(id, offset: note.blocks[index].detail.utf16Length, isDetail: true)
+        }
+    }
+
+    /// Hides a block's nested text; a caret inside it moves to the end of the block.
+    public func collapseDetail(_ id: UUID) {
+        guard expandedDetails.remove(id) != nil else { return }
+        if selection?.blockID == id, selection?.isDetail == true, let index = index(of: id) {
+            selection = BlockSelection(blockID: id, range: note.blocks[index].content.utf16Length..<note.blocks[index].content.utf16Length)
+            focus(id, offset: .max)
+        }
+    }
+
+    /// Typing in a block's nested text. Consecutive typing is one undo step.
+    public func setDetail(_ detail: RichText, ofBlock id: UUID) {
+        guard let index = index(of: id), note.blocks[index].detail != detail else { return }
+        recordUndo(.typingDetail(blockID: id))
+        note.blocks[index].detail = detail
+        markChanged()
+    }
+
+    /// Deletes a block's nested text (undoable) and returns the caret to the block.
+    public func removeDetail(_ id: UUID) {
+        guard let index = index(of: id) else { return }
+        expandedDetails.remove(id)
+        if let updated = BlockEditing.setDetail(note, blockID: id, to: .empty) {
+            recordUndo(.structural)
+            note = updated
+            markChanged()
+        }
+        focus(id, offset: note.blocks[index].content.utf16Length)
+    }
+
+    /// Caret or selection moved inside a block's nested text.
+    public func updateDetailSelection(blockID: UUID, range: Range<Int>) {
+        let newSelection = BlockSelection(blockID: blockID, range: range, isDetail: true)
+        if let selection, selection.blockID != blockID || !selection.isDetail || abs(selection.range.lowerBound - range.lowerBound) > 1 {
+            history.breakCoalescing()
+        }
+        selection = newSelection
+        guard rangeSelection == nil else { return }
+        if activeBlockID != blockID { activeBlockID = blockID }
+        if hasTextSelection != !range.isEmpty { hasTextSelection = !range.isEmpty }
+        let marks = index(of: blockID).map { note.blocks[$0].detail.commonMarks(in: range) } ?? []
+        if selectionMarks != marks { selectionMarks = marks }
+    }
+
+    /// Paste inside nested text: everything stays in it, one line per paragraph.
+    public func pasteIntoDetail(_ paragraphs: [PastedParagraph], blockID: UUID, range: Range<Int>) {
+        guard let index = index(of: blockID), !paragraphs.isEmpty else { return }
+        let inserted = BlockEditing.nestedText(from: paragraphs)
+        let detail = note.blocks[index].detail.replacing(range, with: inserted)
+        guard let updated = BlockEditing.setDetail(note, blockID: blockID, to: detail) else { return }
+        recordUndo(.structural)
+        note = updated
+        markChanged()
+        focus(blockID, offset: range.lowerBound + inserted.utf16Length, isDetail: true)
+        nameLinks(in: paragraphs)
+    }
+
+    /// Backspace at the start of nested text: empty nested text closes, and the
+    /// caret returns to the end of the block. Returns false when nothing happened.
+    @discardableResult
+    public func backspaceAtDetailStart(_ id: UUID) -> Bool {
+        guard let index = index(of: id), note.blocks[index].detail.isEmpty else { return false }
+        collapseDetail(id)
+        focus(id, offset: .max)
+        return true
     }
 
     /// Enter.
@@ -279,8 +451,223 @@ public final class NoteEditorModel {
         applyKeepingCaret(on: id) { BlockEditing.move($0, blockID: id, relativeTo: targetID, placeAfter: placeAfter) }
     }
 
+    /// Dropped onto another row: the block becomes hidden nested text of that
+    /// row, which stays collapsed. The caret goes to the end of that row.
+    public func nestBlock(_ id: UUID, into targetID: UUID) {
+        guard let updated = BlockEditing.nest(note, blockID: id, into: targetID) else { return }
+        recordUndo(.structural)
+        note = updated
+        expandedDetails.remove(id)
+        if rangeSelection.map({ [$0.anchor.blockID, $0.focus.blockID].contains(id) }) == true { rangeSelection = nil }
+        markChanged()
+        focus(targetID, offset: .max)
+    }
+
+    /// A nested row dragged out between rows: it becomes a block again, and the
+    /// caret goes to its end.
+    public func unnestRow(_ row: Range<Int>, of id: UUID, relativeTo targetID: UUID, placeAfter: Bool) {
+        guard let result = BlockEditing.unnest(note, blockID: id, row: row, relativeTo: targetID, placeAfter: placeAfter) else { return }
+        recordUndo(.structural)
+        note = BlockEditing.normalizingRanks(result.note)
+        finishMovingNestedRow(from: id)
+        focus(result.focusBlockID, offset: result.focusOffset)
+    }
+
+    /// A nested row dragged onto another row: it moves into that row's nested
+    /// text, which stays collapsed.
+    public func moveNestedRow(_ row: Range<Int>, of id: UUID, into targetID: UUID) {
+        guard let updated = BlockEditing.moveNestedRow(note, blockID: id, row: row, into: targetID) else { return }
+        recordUndo(.structural)
+        note = updated
+        finishMovingNestedRow(from: id)
+        focus(targetID, offset: .max)
+    }
+
+    // MARK: Columns
+
+    /// Format ▸ Move to Right / Left Column: the block with the caret, or every
+    /// block of a multi-block selection, goes to the end of that column. The
+    /// first move right starts the right column; emptying the left one ends it.
+    public func moveSelection(toColumn column: Int) {
+        let ids = rangeSelection.map { BlockEditing.segments(of: $0, in: note).map(\.blockID) } ?? activeBlockID.map { [$0] } ?? []
+        moveBlocks(ids, toColumn: column)
+    }
+
+    /// A block dragged beside the note, or into the other column's empty space.
+    public func moveBlocks(_ ids: [UUID], toColumn column: Int) {
+        guard let updated = BlockEditing.moveToColumn(note, blockIDs: ids, column: column) else { return }
+        recordUndo(.structural)
+        note = updated
+        rangeSelection = nil
+        markChanged()
+        if let id = activeBlockID, ids.contains(id) { refocusBlock(id) } else if let id = ids.last { focus(id, offset: .max) }
+    }
+
+    // MARK: Row tools
+
+    public func setMenuRow(_ id: UUID?) {
+        if menuRowID != id { menuRowID = id }
+    }
+
+    /// The row menu's Duplicate (⇧⌘D): a copy right below; the caret goes to its end.
+    public func duplicateBlock(_ id: UUID? = nil) {
+        guard let id = id ?? activeBlockID else { return }
+        apply { BlockEditing.duplicate($0, blockID: id) }
+    }
+
+    /// ⌥-drag: a copy dropped before or after another row (the original stays).
+    public func duplicateBlock(_ id: UUID, relativeTo targetID: UUID, placeAfter: Bool) {
+        apply { BlockEditing.duplicate($0, blockID: id, relativeTo: targetID, placeAfter: placeAfter) }
+    }
+
+    /// ⌥-drag beside the note: a copy starts (or ends) that column.
+    public func duplicateBlock(_ id: UUID, toColumn column: Int) {
+        apply { BlockEditing.duplicate($0, blockID: id, toColumn: column) }
+    }
+
+    /// Copy Row: whole blocks, with their kind, tag, nested text and picture.
+    public func paragraphs(ofBlocks ids: [UUID]) -> [PastedParagraph] {
+        BlockEditing.paragraphs(of: note, blockIDs: ids)
+    }
+
+    // MARK: Pictures
+
+    /// Pictures dropped or pasted at a block go in before or after it (taking
+    /// its place when it is an empty line). The caret goes to the last caption.
+    @discardableResult
+    public func insertImages(_ images: [NoteImage], relativeTo targetID: UUID, placeAfter: Bool) -> Bool {
+        var inserted = false
+        apply { note in
+            let result = BlockEditing.insertImages(note, images, relativeTo: targetID, placeAfter: placeAfter)
+            inserted = result != nil
+            return result
+        }
+        return inserted
+    }
+
+    /// Pictures dropped beside a one-column note start its right column.
+    @discardableResult
+    public func insertImagesInNewColumn(_ images: [NoteImage]) -> Bool {
+        var inserted = false
+        apply { note in
+            let result = BlockEditing.insertImagesInNewColumn(note, images)
+            inserted = result != nil
+            return result
+        }
+        return inserted
+    }
+
+    /// Format ▸ Insert Image… and "/image": asks for pictures, then puts them
+    /// in below the block with the caret.
+    public func chooseImages(for blockID: UUID? = nil) {
+        guard let picker = imagePicker, let id = blockID ?? activeBlockID ?? note.blocks.last?.id else { return }
+        Task { [weak self] in
+            let images = await picker()
+            guard let self, !images.isEmpty else { return }
+            self.insertImages(images, relativeTo: self.index(of: id) != nil ? id : (self.note.blocks.last?.id ?? id), placeAfter: true)
+        }
+    }
+
+    /// A picture resized by its corner (one undo step per drag); nil goes
+    /// back to its own size.
+    public func setImageWidth(_ width: Double?, of id: UUID) {
+        guard let updated = BlockEditing.setImageWidth(note, blockID: id, to: width) else { return }
+        recordUndo(.structural)
+        note = updated
+        markChanged()
+    }
+
+    /// The picture's delete button: an image block goes; a row keeps its text
+    /// and loses its attached picture. Undoable.
+    public func deleteImage(of id: UUID) {
+        guard let index = index(of: id) else { return }
+        if note.blocks[index].type == .image { return deleteBlock(id) }
+        guard let updated = BlockEditing.removeAttachedImage(note, from: id) else { return }
+        recordUndo(.structural)
+        note = updated
+        markChanged()
+    }
+
+    /// A row's picture dragged out between rows becomes an image block there.
+    public func detachImage(from rowID: UUID, relativeTo targetID: UUID, placeAfter: Bool) {
+        apply { BlockEditing.detachImage($0, from: rowID, relativeTo: targetID, placeAfter: placeAfter) }
+    }
+
+    /// A row's picture dragged onto another row.
+    public func moveAttachedImage(from rowID: UUID, to targetID: UUID) {
+        guard let updated = BlockEditing.moveAttachedImage(note, from: rowID, to: targetID) else { return }
+        recordUndo(.structural)
+        note = updated
+        markChanged()
+    }
+
+    /// Deletes a block, e.g. a picture from its delete button. Undoable.
+    public func deleteBlock(_ id: UUID) {
+        expandedDetails.remove(id)
+        if rangeSelection.map({ [$0.anchor.blockID, $0.focus.blockID].contains(id) }) == true { rangeSelection = nil }
+        apply { BlockEditing.removing($0, blockID: id) }
+    }
+
+    private func finishMovingNestedRow(from id: UUID) {
+        if index(of: id).map({ note.blocks[$0].detail.isEmpty }) == true { expandedDetails.remove(id) }
+        rangeSelection = nil
+        markChanged()
+    }
+
     public func paste(_ paragraphs: [PastedParagraph], blockID: UUID, range: Range<Int>) {
         apply { try BlockEditing.paste($0, blockID: blockID, range: range, paragraphs: paragraphs) }
+        nameLinks(in: paragraphs)
+    }
+
+    // MARK: Link names
+
+    /// Pasted links still named after their address get their page's title
+    /// once it arrives (see `LinkTitleFetching`). Not an undo step of its own:
+    /// undoing the paste takes the link away, title and all.
+    private func nameLinks(in paragraphs: [PastedParagraph]) {
+        guard let linkTitles else { return }
+        var asked = Set<URL>()
+        for run in paragraphs.flatMap(\.content.runs) {
+            guard let url = run.link, run.text == LinkNaming.readableName(for: url),
+                  LinkNaming.mayFetchTitle(for: url), asked.insert(url).inserted else { continue }
+            let name = run.text
+            Task { [weak self] in
+                guard let title = await linkTitles.title(for: url) else { return }
+                self?.renameLinks(to: url, from: name, to: title)
+            }
+        }
+    }
+
+    /// Every link to `url` whose text is still `name` now reads `title`; the
+    /// caret stays by the same character.
+    func renameLinks(to url: URL, from name: String, to title: String) {
+        guard name != title else { return }
+        var changed = false
+        for index in note.blocks.indices {
+            for inDetail in [false, true] {
+                let text = inDetail ? note.blocks[index].detail : note.blocks[index].content
+                var shift = 0
+                var offset = 0
+                let caret = selection.flatMap { $0.blockID == note.blocks[index].id && $0.isDetail == inDetail ? $0.range : nil }
+                let runs = text.runs.map { run -> TextRun in
+                    defer { offset += run.text.utf16.count }
+                    guard run.link == url, run.text == name else { return run }
+                    var renamed = run
+                    renamed.text = title
+                    if let caret, offset + run.text.utf16.count <= caret.lowerBound {
+                        shift += title.utf16.count - run.text.utf16.count
+                    }
+                    return renamed
+                }
+                guard runs != text.runs else { continue }
+                changed = true
+                if inDetail { note.blocks[index].detail = RichText(runs: runs) } else { note.blocks[index].content = RichText(runs: runs) }
+                if let caret {
+                    focus(note.blocks[index].id, offset: caret.lowerBound + shift, length: caret.count, scrollsIntoView: false, isDetail: inDetail)
+                }
+            }
+        }
+        if changed { markChanged() }
     }
 
     // MARK: Multi-block selection
@@ -366,6 +753,7 @@ public final class NoteEditorModel {
             return try BlockEditing.paste(deleted.note, blockID: deleted.focusBlockID, range: offset..<offset, paragraphs: paragraphs)
                 ?? deleted
         }
+        nameLinks(in: paragraphs)
     }
 
     private func toggleMarkInRangeSelection(_ mark: InlineMark) {
@@ -415,7 +803,9 @@ public final class NoteEditorModel {
         if let dismissed = dismissedSlash, dismissed.blockID == blockID, dismissed.location == token.range.lowerBound {
             return
         }
-        let commands = SlashCommand.matches(token.query)
+        // "Remove tag" only makes sense on a tagged block.
+        let isTagged = index(of: blockID).map { note.blocks[$0].tag != nil } ?? false
+        let commands = SlashCommand.matches(token.query).filter { isTagged || $0.action != .removeTag }
         guard !commands.isEmpty else {
             slashMenu = nil
             return
@@ -436,18 +826,34 @@ public final class NoteEditorModel {
         slashMenu = menu
     }
 
+    /// The pointer moved over a command.
+    public func highlightSlashCommand(at index: Int) {
+        guard var menu = slashMenu, menu.commands.indices.contains(index), menu.highlighted != index else { return }
+        menu.highlighted = index
+        slashMenu = menu
+    }
+
     /// Return/Tab in the menu, or a click on a command.
     public func applySlashCommand(_ command: SlashCommand? = nil) {
         guard let menu = slashMenu else { return }
         let chosen = command ?? menu.commands[menu.highlighted]
         slashMenu = nil
-        apply { try BlockEditing.applySlashCommand($0, blockID: menu.blockID, removing: menu.range, type: chosen.type) }
+        runSlashCommand(chosen, blockID: menu.blockID, removing: menu.range)
     }
 
     /// "/name " typed in full: apply without the menu.
     public func applyCompletedSlashCommand(_ command: SlashCommand, blockID: UUID, removing range: Range<Int>) {
         slashMenu = nil
-        apply { try BlockEditing.applySlashCommand($0, blockID: blockID, removing: range, type: command.type) }
+        runSlashCommand(command, blockID: blockID, removing: range)
+    }
+
+    private func runSlashCommand(_ command: SlashCommand, blockID: UUID, removing range: Range<Int>) {
+        apply { try BlockEditing.applySlashCommand($0, blockID: blockID, removing: range, action: command.action) }
+        if command.action == .customTag { requestTagPicker(blockID: blockID) }
+        if command.action == .nestedText, let index = index(of: blockID) {
+            focus(blockID, offset: note.blocks[index].detail.utf16Length, isDetail: true)
+        }
+        if command.action == .image { chooseImages(for: blockID) }
     }
 
     /// Esc: closes the menu and leaves the typed text as it is.
@@ -471,8 +877,9 @@ public final class NoteEditorModel {
 
     // MARK: Focus
 
-    public func focus(_ id: UUID, offset: Int, length: Int = 0, scrollsIntoView: Bool = true) {
-        focusRequest = FocusRequest(blockID: id, offset: offset, length: length, scrollsIntoView: scrollsIntoView)
+    public func focus(_ id: UUID, offset: Int, length: Int = 0, scrollsIntoView: Bool = true, isDetail: Bool = false) {
+        if isDetail { expandedDetails.insert(id) }
+        focusRequest = FocusRequest(blockID: id, offset: offset, length: length, scrollsIntoView: scrollsIntoView, isDetail: isDetail)
     }
 
     /// `scrollsIntoView: false` keeps the note scrolled to its top (title visible).
@@ -480,21 +887,30 @@ public final class NoteEditorModel {
         if let first = note.blocks.first { focus(first.id, offset: 0, scrollsIntoView: scrollsIntoView) }
     }
 
-    public func focusLastBlockEnd() {
-        if let last = note.blocks.last { focus(last.id, offset: .max) }
+    /// The end of the last block, or of the last block of `column`.
+    public func focusLastBlockEnd(column: Int? = nil) {
+        let last = column.flatMap { column in note.blocks.last { $0.column == column } } ?? note.blocks.last
+        if let last { focus(last.id, offset: .max) }
     }
 
-    /// Moves the caret to the end of the previous block. Returns false at the first block.
+    /// Moves the caret to the end of the previous block (into its nested text
+    /// when that is shown). Returns false at the first block.
     @discardableResult
     public func focusPrevious(before id: UUID) -> Bool {
         guard let index = index(of: id), index > 0 else { return false }
-        focus(note.blocks[index - 1].id, offset: .max)
+        let previous = note.blocks[index - 1].id
+        focus(previous, offset: .max, isDetail: expandedDetails.contains(previous))
         return true
     }
 
-    /// Moves the caret to the start of the next block. Returns false at the last block.
+    /// Moves the caret to the start of the next block, or of this block's nested
+    /// text when that is shown. Returns false at the end of the note.
     @discardableResult
-    public func focusNext(after id: UUID) -> Bool {
+    public func focusNext(after id: UUID, fromDetail: Bool = false) -> Bool {
+        if !fromDetail, expandedDetails.contains(id), index(of: id) != nil {
+            focus(id, offset: 0, isDetail: true)
+            return true
+        }
         guard let index = index(of: id), index + 1 < note.blocks.count else { return false }
         focus(note.blocks[index + 1].id, offset: 0)
         return true
@@ -528,7 +944,7 @@ public final class NoteEditorModel {
     private func currentSnapshot() -> EditHistory.Snapshot {
         EditHistory.Snapshot(
             blocks: note.blocks,
-            caret: selection.map { EditHistory.Caret(blockID: $0.blockID, offset: $0.range.lowerBound) }
+            caret: selection.map { EditHistory.Caret(blockID: $0.blockID, offset: $0.range.lowerBound, isDetail: $0.isDetail) }
         )
     }
 
@@ -548,33 +964,42 @@ public final class NoteEditorModel {
         markChanged()
         syncUndoState()
         if let caret = snapshot.caret, index(of: caret.blockID) != nil {
-            focus(caret.blockID, offset: caret.offset)
+            focus(caret.blockID, offset: caret.offset, isDetail: caret.isDetail)
         } else {
             focusFirstBlock()
         }
     }
 
-    /// Block + range for preset formatting: the selection, or the whole active block.
-    private func formattingTarget() -> (UUID, Range<Int>)? {
+    /// Block + range for preset formatting: the selection, or the whole active
+    /// block (or its whole nested text, when the caret is there).
+    private func formattingTarget() -> (UUID, Range<Int>, inDetail: Bool)? {
         guard let selection, let index = index(of: selection.blockID) else { return nil }
-        let range = selection.range.isEmpty ? 0..<note.blocks[index].content.utf16Length : selection.range
-        return (selection.blockID, range)
+        let text = selection.isDetail ? note.blocks[index].detail : note.blocks[index].content
+        let range = selection.range.isEmpty ? 0..<text.utf16Length : selection.range
+        return (selection.blockID, range, selection.isDetail)
     }
 
-    private func transformContent(of id: UUID, keepingSelection range: Range<Int>?, _ transform: (RichText) -> RichText) {
+    private func transformContent(of id: UUID, inDetail: Bool = false, keepingSelection range: Range<Int>?, _ transform: (RichText) -> RichText) {
         guard let index = index(of: id) else { return }
-        let updated = transform(note.blocks[index].content)
-        guard updated != note.blocks[index].content else { return }
+        let current = inDetail ? note.blocks[index].detail : note.blocks[index].content
+        let updated = transform(current)
+        guard updated != current else { return }
         recordUndo(.structural)
-        note.blocks[index].content = updated
+        if inDetail { note.blocks[index].detail = updated } else { note.blocks[index].content = updated }
         markChanged()
-        if let range { focus(id, offset: range.lowerBound, length: range.count, scrollsIntoView: false) }
-        updateSelection(blockID: id, range: range ?? 0..<0)
+        if let range { focus(id, offset: range.lowerBound, length: range.count, scrollsIntoView: false, isDetail: inDetail) }
+        if inDetail {
+            updateDetailSelection(blockID: id, range: range ?? 0..<0)
+        } else {
+            updateSelection(blockID: id, range: range ?? 0..<0)
+        }
     }
 
     private func apply(_ operation: (Note) throws -> BlockEditing.Result?) {
         do {
             guard let result = try operation(note) else { return }
+            // Only the caret moves (e.g. Backspace after a picture goes to its caption).
+            guard result.note != note else { return focus(result.focusBlockID, offset: result.focusOffset) }
             recordUndo(.structural)
             note = BlockEditing.normalizingRanks(result.note)
             markChanged()
@@ -591,8 +1016,9 @@ public final class NoteEditorModel {
         recordUndo(.structural)
         note = BlockEditing.normalizingRanks(updated)
         markChanged()
-        let range = (selection?.blockID == id ? selection?.range : nil) ?? 0..<0
-        focus(id, offset: range.lowerBound, length: range.count)
+        let current = selection?.blockID == id ? selection : nil
+        let range = current?.range ?? 0..<0
+        focus(id, offset: range.lowerBound, length: range.count, isDetail: current?.isDetail ?? false)
         return true
     }
 

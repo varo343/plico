@@ -31,11 +31,26 @@ public final class NotesModel {
         }
     }
 
-    /// Drag reordering only makes sense in Manual sort over the full list.
-    public var canReorder: Bool { sortMode == .manual && !isSearching }
+    /// Checking a row in a note moves it below the open rows of its list.
+    public var movesCheckedRowsDown: Bool {
+        didSet {
+            guard movesCheckedRowsDown != oldValue else { return }
+            var settings = settingsStore.load()
+            settings.movesCheckedRowsDown = movesCheckedRowsDown
+            settingsStore.save(settings)
+            editor?.movesCheckedRowsDown = movesCheckedRowsDown
+            editor?.linkTitles = linkTitles
+        }
+    }
+
+    /// Notes can be dragged whenever the full list is shown. Outside Manual sort,
+    /// the first drag switches to Manual, starting from the order on screen.
+    public var canReorder: Bool { !isSearching }
     public var isSearching: Bool { !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty }
     public var hasAnyNotes: Bool { !activeNotes.isEmpty }
 
+    /// Names pasted links after their page (nil in tests and in-memory stores).
+    @ObservationIgnored public var linkTitles: (any LinkTitleFetching)?
     @ObservationIgnored private let repository: NoteRepository
     @ObservationIgnored private let settingsStore: SettingsStore
     @ObservationIgnored private let now: () -> Date
@@ -56,6 +71,7 @@ public final class NotesModel {
         self.autosaveDelay = autosaveDelay
         self.now = now
         self.sortMode = settings.load().sortMode
+        self.movesCheckedRowsDown = settings.load().movesCheckedRowsDown
     }
 
     /// Initial load: opens the most recently edited note.
@@ -92,6 +108,8 @@ public final class NotesModel {
                 note: note, repository: repository, autosaveDelay: autosaveDelay, now: now,
                 onSaved: { [weak self] _ in self?.reload() }
             )
+            editor?.movesCheckedRowsDown = movesCheckedRowsDown
+            editor?.linkTitles = linkTitles
         }
     }
 
@@ -229,9 +247,10 @@ public final class NotesModel {
         reload()
     }
 
-    /// Manual-sort drag within the pinned or unpinned group.
+    /// Drag within the pinned or unpinned group. Indexes refer to the list as shown.
     public func move(inPinnedGroup pinned: Bool, from source: IndexSet, to destination: Int) {
         guard canReorder else { return }
+        if sortMode != .manual { adoptShownOrderAsManual() }
         let group = pinned ? groups.pinned : groups.others
         let updates = ManualOrdering.move(in: group, from: source, to: destination)
         perform("reorder notes") {
@@ -242,7 +261,20 @@ public final class NotesModel {
         reload()
     }
 
-    /// Drag and drop in Manual sort: places `id` before or after `targetID`.
+    /// Makes the order on screen the manual order, then switches to Manual sort,
+    /// so a drag in another sort mode moves only the dragged note.
+    private func adoptShownOrderAsManual() {
+        let shown = groups.pinned + groups.others
+        perform("reorder notes") {
+            for (note, rank) in zip(shown, Rank.evenlySpaced(shown.count)) where note.manualRank != rank {
+                try repository.updateMetadata(id: note.id) { $0.manualRank = rank }
+            }
+        }
+        sortMode = .manual
+        reload()
+    }
+
+    /// Drag and drop: places `id` before or after `targetID`.
     /// Notes only move within their own group (pinned or not).
     public func moveNote(_ id: UUID, relativeTo targetID: UUID, placeAfter: Bool) {
         guard canReorder, id != targetID else { return }

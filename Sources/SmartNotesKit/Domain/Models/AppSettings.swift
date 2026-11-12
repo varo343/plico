@@ -29,6 +29,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public var outlookFilterMode: OutlookFilterMode
     public var outlookRules: OutlookRules
     public var sortMode: NoteSortMode
+    /// Checking a row in a note moves it below the open rows of its list.
+    public var movesCheckedRowsDown: Bool
 
     public init(
         defaultFontFamily: FontFamilyPreset = .system,
@@ -36,7 +38,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
         appearance: AppearancePreference = .system,
         outlookFilterMode: OutlookFilterMode = .flagged,
         outlookRules: OutlookRules = OutlookRules(),
-        sortMode: NoteSortMode = .manual
+        sortMode: NoteSortMode = .manual,
+        movesCheckedRowsDown: Bool = true
     ) {
         self.defaultFontFamily = defaultFontFamily
         self.defaultFontSize = defaultFontSize
@@ -44,6 +47,7 @@ public struct AppSettings: Codable, Hashable, Sendable {
         self.outlookFilterMode = outlookFilterMode
         self.outlookRules = outlookRules
         self.sortMode = sortMode
+        self.movesCheckedRowsDown = movesCheckedRowsDown
     }
 
     public static let defaults = AppSettings()
@@ -59,5 +63,6 @@ public struct AppSettings: Codable, Hashable, Sendable {
         outlookFilterMode = (try? c.decode(OutlookFilterMode.self, forKey: .outlookFilterMode)) ?? d.outlookFilterMode
         outlookRules = (try? c.decode(OutlookRules.self, forKey: .outlookRules)) ?? d.outlookRules
         sortMode = (try? c.decode(NoteSortMode.self, forKey: .sortMode)) ?? d.sortMode
+        movesCheckedRowsDown = (try? c.decode(Bool.self, forKey: .movesCheckedRowsDown)) ?? d.movesCheckedRowsDown
     }
 }

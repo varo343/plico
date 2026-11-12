@@ -36,7 +36,7 @@ public enum PersistenceController {
     }
 
     public static func makeContainer(_ storage: Storage) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: SmartNotesSchemaV1.self)
+        let schema = Schema(versionedSchema: SmartNotesSchemaV5.self)
         let configuration: ModelConfiguration
         switch storage {
         case .inMemory:

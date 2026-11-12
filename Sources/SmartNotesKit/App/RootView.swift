@@ -135,10 +135,15 @@ public struct RootView: View {
         }
         .snAnimation(.easeOut(duration: 0.16), value: app.notes.selectedNoteID)
         .snAnimation(.easeOut(duration: 0.16), value: app.destination)
-        .background(SNColor.card)
         .clipShape(RoundedRectangle(cornerRadius: SNRadius.standard))
         .overlay(RoundedRectangle(cornerRadius: SNRadius.standard).strokeBorder(SNColor.borderSubtle, lineWidth: 1))
-        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+        // The shadow belongs to the card's shape only: on the whole card it
+        // was redrawn from all the note's content on every frame.
+        .background {
+            RoundedRectangle(cornerRadius: SNRadius.standard)
+                .fill(SNColor.card)
+                .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+        }
     }
 
     /// Section-specific controls next to the switcher.
@@ -146,7 +151,6 @@ public struct RootView: View {
     private var sectionAccessory: some View {
         switch app.destination {
         case .notes: NotesSortMenu(model: app.notes)
-        case .trash: EmptyTrashButton(model: app.notes)
         case .mentions: MentionsHeaderControls(outlook: app.outlook)
         default: EmptyView()
         }

@@ -8,7 +8,7 @@ struct MentionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if outlook.account != nil || outlook.isShowingSamples {
+            if outlook.account != nil || outlook.isShowingSamples || outlook.showsFolderMentions {
                 ConnectionStatusLine(outlook: outlook)
                     .padding(.horizontal, SNSpacing.m)
                     .padding(.bottom, SNSpacing.s)
@@ -19,7 +19,7 @@ struct MentionsView: View {
 
     @ViewBuilder
     private var content: some View {
-        if outlook.account == nil && !outlook.isShowingSamples {
+        if outlook.account == nil && !outlook.isShowingSamples && !outlook.showsFolderMentions {
             switch outlook.status {
             case .connecting:
                 EmptyState(symbol: "envelope", tint: SNColor.accentSun, title: "Waiting for Microsoft sign-in…",
@@ -51,8 +51,10 @@ struct MentionsView: View {
                 LazyVStack(spacing: 2) {
                     ForEach(outlook.items) { item in
                         MentionCard(item: item, isSelected: item.id == outlook.selectedItemID) { outlook.select(item.id) }
+                            .glidingHoverRow(item.id)
                     }
                 }
+                .glidingHover()
                 .padding(.horizontal, SNSpacing.xs)
                 .padding(.bottom, SNSpacing.l)
                 .snAnimation(SNMotion.snappy, value: outlook.items.map(\.id))
@@ -96,6 +98,9 @@ struct ConnectionStatusLine: View {
 
     private var statusText: String {
         if outlook.isShowingSamples { return "Sample emails · not connected" }
+        if outlook.account == nil, let checked = outlook.lastFolderCheckAt {
+            return "From Outlook on the web · checked \(checked.formatted(.relative(presentation: .named)))"
+        }
         let account = outlook.account?.address ?? "Outlook"
         switch outlook.status {
         case .syncing: return "Updating from \(account)…"
@@ -112,7 +117,9 @@ struct ConnectionStatusLine: View {
         case .ready: SNColor.accentMint
         case .syncing, .connecting: SNColor.accentSun
         case .offline: SNColor.borderSubtle
-        default: outlook.isShowingSamples ? SNColor.borderSubtle : SNColor.accentCoral
+        default:
+            if outlook.account == nil && outlook.showsFolderMentions { SNColor.accentMint }
+            else { outlook.isShowingSamples ? SNColor.borderSubtle : SNColor.accentCoral }
         }
     }
 
@@ -132,7 +139,6 @@ struct MentionCard: View {
     let item: ExternalItem
     let isSelected: Bool
     let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -164,18 +170,14 @@ struct MentionCard: View {
             .padding(.vertical, 10)
             .background {
                 let shape = RoundedRectangle(cornerRadius: SNRadius.standard)
-                if isSelected {
-                    shape.fill(SNColor.card).overlay(shape.strokeBorder(SNColor.borderSubtle, lineWidth: 1))
-                        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-                } else if isHovered {
-                    shape.fill(SNColor.borderSubtle.opacity(0.45))
-                }
+                // The hover highlight is the list's (`glidingHover`), under this card.
+                shape.fill(SNColor.card).overlay(shape.strokeBorder(SNColor.borderSubtle, lineWidth: 1))
+                    .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+                    .opacity(isSelected ? 1 : 0)
             }
             .contentShape(RoundedRectangle(cornerRadius: SNRadius.standard))
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .snAnimation(SNMotion.hover, value: isHovered)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

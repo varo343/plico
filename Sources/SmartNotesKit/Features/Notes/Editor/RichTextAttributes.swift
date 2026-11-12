@@ -25,7 +25,7 @@ struct BlockTextStyle: Equatable {
     var weight: NSFont.Weight
     var family: FontFamilyPreset
     var lineHeight: CGFloat
-    /// Checked checklist items are shown muted.
+    /// Checked checklist items and captions are shown muted.
     var isMuted: Bool
 
     init(type: BlockType, defaults: EditorDefaults, isChecked: Bool) {
@@ -34,12 +34,14 @@ struct BlockTextStyle: Equatable {
         case .heading1: (baseSize, weight) = (body + 8, .bold)
         case .heading2: (baseSize, weight) = (body + 4, .semibold)
         case .heading3: (baseSize, weight) = (body + 1, .semibold)
+        // A picture's caption: small and quiet under it.
+        case .image: (baseSize, weight) = (body - 2, .regular)
         default: (baseSize, weight) = (body, .regular)
         }
         family = defaults.fontFamily
         // Body 16/25 per the design spec; headings a little tighter.
         lineHeight = (baseSize * (type == .paragraph || type.isListLike || type == .quote ? 1.5625 : 1.3)).rounded()
-        isMuted = type == .checklistItem && isChecked
+        isMuted = (type == .checklistItem && isChecked) || type == .image
     }
 }
 

@@ -48,7 +48,7 @@ import Testing
     @Test func applyRemovesTypedTextAndChangesType() throws {
         let block = NoteBlock(rank: "i", content: RichText(runs: [TextRun("Buy ", marks: [.bold]), TextRun("/checkbox")]))
         let note = Note(createdAt: .now, manualRank: "i", blocks: [block])
-        let result = try BlockEditing.applySlashCommand(note, blockID: block.id, removing: 4..<13, type: .checklistItem)
+        let result = try BlockEditing.applySlashCommand(note, blockID: block.id, removing: 4..<13, action: .turnInto(.checklistItem))
         #expect(result.note.blocks[0].type == .checklistItem)
         #expect(result.note.blocks[0].content.runs == [TextRun("Buy ", marks: [.bold])])
         #expect(result.focusOffset == 4)

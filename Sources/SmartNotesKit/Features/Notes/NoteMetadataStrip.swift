@@ -28,7 +28,47 @@ struct NoteMetadataStrip: View {
             }
             .buttonStyle(MetadataButtonStyle(isSet: summary.isPinned))
             .help(summary.isPinned ? "Unpin (⇧⌘P)" : "Pin to the top of the list (⇧⌘P)")
+            if let editor = notes.editor {
+                RowSortField(editor: editor, notes: notes)
+            }
         }
+    }
+}
+
+/// Sorts the note's lists, and turns "checked rows move down" on or off.
+private struct RowSortField: View {
+    let editor: NoteEditorModel
+    @Bindable var notes: NotesModel
+
+    var body: some View {
+        SNDropdown(minWidth: 250, shape: .capsule, showsChevron: false, labelPadding: 10) {
+            [
+                .header("Severity"),
+                .item(SNMenuItem(title: RowSortOrder.severity.title(reversed: false), icon: "arrow.down", shortcut: "⌥⌘S") {
+                    editor.sortRows(by: .severity)
+                }),
+                .item(SNMenuItem(title: RowSortOrder.severity.title(reversed: true), icon: "arrow.up", shortcut: "⇧⌥⌘S") {
+                    editor.sortRows(by: .severity, reversed: true)
+                }),
+                .header("Completion"),
+                .item(SNMenuItem(title: RowSortOrder.completion.title(reversed: false), icon: "circle") { editor.sortRows(by: .completion) }),
+                .item(SNMenuItem(title: RowSortOrder.completion.title(reversed: true), icon: "checkmark.circle") {
+                    editor.sortRows(by: .completion, reversed: true)
+                }),
+                .divider(),
+                .item(SNMenuItem(title: "Move Checked Rows Down", icon: "arrow.down.to.line", isChecked: notes.movesCheckedRowsDown) {
+                    notes.movesCheckedRowsDown.toggle()
+                }),
+            ]
+        } label: {
+            HStack(spacing: 5) {
+                MotionIcon(symbol: "arrow.up.arrow.down", size: 12)
+                Text("Sort")
+            }
+            .font(.system(size: 12)).foregroundStyle(SNColor.textSecondary)
+        }
+        .hoverLabel("Sort rows: lists only, headings and text stay put")
+        .accessibilityLabel("Sort rows")
     }
 }
 

@@ -24,13 +24,15 @@ public final class AppModel {
     public init(dependencies: AppDependencies) {
         self.dependencies = dependencies
         self.notes = NotesModel(repository: dependencies.notes, settings: dependencies.settings)
+        notes.linkTitles = dependencies.linkTitles
         self.today = TodayModel(repository: dependencies.notes)
         self.settings = SettingsModel(store: dependencies.settings)
         self.outlook = OutlookModel(
             repository: dependencies.externalItems,
             integrationStates: dependencies.integrationStates,
             session: dependencies.outlookSession,
-            preferences: dependencies.outlookPreferences
+            preferences: dependencies.outlookPreferences,
+            mentionsFolder: dependencies.isInMemory ? nil : try? MentionsFolder.defaultURL()
         )
         notes.load()
         // Writing first: the caret starts in the open note, not in Search.

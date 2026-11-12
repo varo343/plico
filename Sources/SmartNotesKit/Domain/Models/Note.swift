@@ -14,6 +14,24 @@ public struct NoteBlock: Identifiable, Hashable, Sendable {
     public var indentLevel: Int {
         didSet { indentLevel = Self.clampIndent(indentLevel) }
     }
+    public var tag: BlockTag?
+    /// Nested text: longer text tucked under this block (e.g. the draft of an
+    /// email next to "write the marketing email"), shown when the row is expanded.
+    /// Soft line breaks only; `.empty` when the block has none.
+    public var detail: RichText
+    /// Which column of the note the block sits in: 0 is the left one (the only
+    /// one in most notes), 1 the right one.
+    public var column: Int {
+        didSet { column = Self.clampColumn(column) }
+    }
+    /// The picture of an `.image` block (its text is the caption), or one
+    /// attached to a row (shown under its text); nil otherwise.
+    public var image: NoteImage?
+    /// The width the picture is shown at, in points (resized by dragging its
+    /// corner); nil shows it at its own size, never wider than the column.
+    public var imageWidth: Double?
+
+    public static let maxColumn = 1
 
     public init(
         id: UUID = UUID(),
@@ -21,7 +39,12 @@ public struct NoteBlock: Identifiable, Hashable, Sendable {
         rank: String,
         content: RichText = .empty,
         isChecked: Bool = false,
-        indentLevel: Int = 0
+        indentLevel: Int = 0,
+        tag: BlockTag? = nil,
+        detail: RichText = .empty,
+        column: Int = 0,
+        image: NoteImage? = nil,
+        imageWidth: Double? = nil
     ) {
         self.id = id
         self.type = type
@@ -29,6 +52,15 @@ public struct NoteBlock: Identifiable, Hashable, Sendable {
         self.content = content
         self.isChecked = isChecked
         self.indentLevel = Self.clampIndent(indentLevel)
+        self.tag = tag
+        self.detail = detail
+        self.column = Self.clampColumn(column)
+        self.image = image
+        self.imageWidth = imageWidth
+    }
+
+    private static func clampColumn(_ column: Int) -> Int {
+        min(max(column, 0), maxColumn)
     }
 
     private static func clampIndent(_ level: Int) -> Int {
@@ -49,9 +81,10 @@ public struct Note: Identifiable, Hashable, Sendable {
     public var dueDate: LocalDay?
     public var manualRank: String
     public var sourceExternalItemId: UUID?
-    /// Always kept ordered by `rank`.
+    /// Always kept in reading order: the left column top to bottom, then the
+    /// right one. Ranks rise in that same order (see `ordered(_:)`).
     public var blocks: [NoteBlock] {
-        didSet { blocks.sort { $0.rank < $1.rank } }
+        didSet { blocks = Self.ordered(blocks) }
     }
 
     public init(
@@ -79,7 +112,23 @@ public struct Note: Identifiable, Hashable, Sendable {
         self.dueDate = dueDate
         self.manualRank = manualRank
         self.sourceExternalItemId = sourceExternalItemId
-        self.blocks = blocks.sorted { $0.rank < $1.rank }
+        self.blocks = Self.ordered(blocks)
+    }
+
+    /// Whether the body is split into two columns.
+    public var hasColumns: Bool { blocks.contains { $0.column > 0 } }
+
+    /// Blocks sorted by column, then by rank. A right column with no left one
+    /// becomes the only column. Ranks are renumbered when they don't rise
+    /// through the columns, so inserting between two neighbours always works.
+    static func ordered(_ blocks: [NoteBlock]) -> [NoteBlock] {
+        var sorted = blocks.sorted { ($0.column, $0.rank) < ($1.column, $1.rank) }
+        if let first = sorted.first, first.column > 0 {
+            for index in sorted.indices { sorted[index].column = 0 }
+        }
+        guard zip(sorted, sorted.dropFirst()).contains(where: { $0.rank > $1.rank }) else { return sorted }
+        for (index, rank) in zip(sorted.indices, Rank.evenlySpaced(sorted.count)) { sorted[index].rank = rank }
+        return sorted
     }
 
     public var isTrashed: Bool { deletedAt != nil }
@@ -110,7 +159,8 @@ public struct Note: Identifiable, Hashable, Sendable {
             manualRank: manualRank,
             sourceExternalItemId: sourceExternalItemId,
             blocks: blocks.map {
-                NoteBlock(type: $0.type, rank: $0.rank, content: $0.content, isChecked: $0.isChecked, indentLevel: $0.indentLevel)
+                NoteBlock(type: $0.type, rank: $0.rank, content: $0.content, isChecked: $0.isChecked, indentLevel: $0.indentLevel, tag: $0.tag,
+                          detail: $0.detail, column: $0.column, image: $0.image, imageWidth: $0.imageWidth)
             }
         )
     }

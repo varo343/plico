@@ -36,6 +36,8 @@ public enum BlockType: String, Codable, CaseIterable, Sendable {
     case numberedItem
     case checklistItem
     case quote
+    /// A picture (`NoteBlock.image`) with an optional caption as its text.
+    case image
 
     public var isListLike: Bool {
         switch self {

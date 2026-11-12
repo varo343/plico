@@ -29,13 +29,15 @@ final class FloatingPanel: NSPanel {
 @MainActor
 final class FloatingPanelController {
     /// Transparent margin around the content, leaving room for its shadow.
-    static let margin: CGFloat = 10
+    /// `SNFloatingSurface`'s deepest shadow reaches radius 14 + 8 down, so less clips it.
+    static let margin: CGFloat = 24
 
     private var panel: FloatingPanel?
     private weak var parent: NSWindow?
     private var anchor: NSRect = .zero
     private var centered = false
     private var preferAbove = false
+    private var alignsTrailing = false
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
     var onClose: (() -> Void)?
@@ -49,10 +51,13 @@ final class FloatingPanelController {
     /// - centered: center horizontally on the anchor (tooltips) instead of aligning leading edges.
     /// - preferAbove: open above the anchor when there is room.
     /// - passesClicksThrough: the panel ignores the mouse (tooltips).
+    /// - alignsTrailing: align trailing edges (controls at the right edge of the editor).
     func show<Content: View>(_ content: Content, below anchor: NSRect, in parent: NSWindow, acceptsKey: Bool,
-                             centered: Bool = false, preferAbove: Bool = false, passesClicksThrough: Bool = false) {
+                             centered: Bool = false, preferAbove: Bool = false, passesClicksThrough: Bool = false,
+                             alignsTrailing: Bool = false) {
         close()
         self.centered = centered
+        self.alignsTrailing = alignsTrailing
         self.preferAbove = preferAbove
         let panel = FloatingPanel(acceptsKey: acceptsKey)
         panel.ignoresMouseEvents = passesClicksThrough
@@ -103,7 +108,8 @@ final class FloatingPanelController {
         var y = preferAbove ? above : below
         if preferAbove, y + size.height > screen.maxY { y = below }
         if !preferAbove, y < screen.minY { y = above }
-        var x = centered ? anchor.midX - size.width / 2 : anchor.minX - Self.margin
+        var x = centered ? anchor.midX - size.width / 2
+            : (alignsTrailing ? anchor.maxX - size.width + Self.margin : anchor.minX - Self.margin)
         x = min(max(x, screen.minX), screen.maxX - size.width)
         let origin = NSPoint(x: x, y: y)
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
@@ -170,12 +176,21 @@ struct SNFloatingSurface<Content: View>: View {
     }
 }
 
+/// How a menu draws its icons: bare, or in small tiles like the slash menu.
+enum SNMenuIconStyle {
+    case plain, tile
+}
+
 /// Keyboard-navigable menu list (↑/↓, Return, Esc) with hover highlights.
 struct SNMenuList: View {
     let entries: [SNMenuEntry]
     var minWidth: CGFloat = 200
+    var iconStyle: SNMenuIconStyle = .plain
     let dismiss: () -> Void
     @State private var highlighted: UUID?
+    /// Hidden while the pointer is outside the menu (the row stays chosen for
+    /// the keyboard); arrow keys show it again.
+    @State private var showsHighlight = true
     @FocusState private var focused: Bool
 
     private var items: [SNMenuItem] {
@@ -204,6 +219,8 @@ struct SNMenuList: View {
                 }
             }
             .frame(minWidth: minWidth, alignment: .leading)
+            .menuHighlight(on: highlighted, isVisible: showsHighlight)
+            .onHover { inside in if !inside { showsHighlight = false } }
         }
         .fixedSize()
         .modifier(PopIn())
@@ -230,8 +247,18 @@ struct SNMenuList: View {
                     badge
                 } else {
                     if let icon = item.icon {
-                        Image(systemName: icon).font(.system(size: 12, weight: .medium)).frame(width: 18)
-                            .iconMotion(for: icon, on: isHighlighted)
+                        switch iconStyle {
+                        case .plain:
+                            Image(systemName: icon).font(.system(size: 12, weight: .medium)).frame(width: 18)
+                                .iconMotion(for: icon, on: isHighlighted)
+                        case .tile:
+                            Image(systemName: icon)
+                                .font(.system(size: 11.5, weight: .medium))
+                                .iconMotion(for: icon, on: isHighlighted)
+                                .frame(width: 24, height: 22)
+                                .background(SNColor.canvas, in: RoundedRectangle(cornerRadius: 6))
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(SNColor.borderSubtle))
+                        }
                     }
                     Text(item.title).font(.system(size: 13, weight: .medium))
                 }
@@ -244,21 +271,33 @@ struct SNMenuList: View {
                     .opacity(item.isChecked ? 1 : 0)
             }
             .foregroundStyle(item.isDestructive ? Color(nsColor: .systemRed) : SNColor.textPrimary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(isHighlighted ? SNColor.borderSubtle.opacity(0.85) : .clear,
-                        in: RoundedRectangle(cornerRadius: innerRadius))
+            .padding(.horizontal, iconStyle == .tile ? 6 : 10)
+            .padding(.vertical, iconStyle == .tile ? 4 : 6)
             .contentShape(RoundedRectangle(cornerRadius: innerRadius))
-            .snAnimation(SNMotion.hover, value: isHighlighted)
+            .menuHighlightRow(item.id)
         }
         .buttonStyle(.plain)
-        .onHover { if $0 { highlighted = item.id } }
+        .onHover { if $0 { hover(item.id) } }
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(item.isChecked ? .isSelected : [])
     }
 
+    /// Over the menu the highlight glides to the row; coming in from outside,
+    /// it appears on the row instead of gliding from where it was.
+    private func hover(_ id: UUID) {
+        if showsHighlight {
+            highlighted = id
+        } else {
+            var placement = Transaction()
+            placement.disablesAnimations = true
+            withTransaction(placement) { highlighted = id }
+            showsHighlight = true
+        }
+    }
+
     private func step(_ delta: Int) {
         guard !items.isEmpty else { return }
+        showsHighlight = true
         let index = items.firstIndex { $0.id == highlighted } ?? (delta > 0 ? -1 : items.count)
         highlighted = items[(index + delta + items.count) % items.count].id
     }
@@ -267,6 +306,48 @@ struct SNMenuList: View {
         guard let item else { return }
         dismiss()
         item.action()
+    }
+}
+
+// MARK: - Sliding highlight
+
+/// Where each row of a menu is, for the one highlight that slides between them.
+private struct MenuRowBoundsKey: PreferenceKey {
+    static var defaultValue: [AnyHashable: Anchor<CGRect>] { [:] }
+    static func reduce(value: inout [AnyHashable: Anchor<CGRect>], nextValue: () -> [AnyHashable: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+extension View {
+    /// A menu row the highlight can sit behind (see `menuHighlight(on:)`).
+    func menuHighlightRow<ID: Hashable>(_ id: ID) -> some View {
+        anchorPreference(key: MenuRowBoundsKey.self, value: .bounds) { [AnyHashable(id): $0] }
+    }
+
+    /// One highlight behind the row `highlighted` that glides from row to row
+    /// (pointer or arrow keys) instead of each row lighting up on its own.
+    /// Menus by default; the note list passes its own hover colour and shape.
+    func menuHighlight<ID: Hashable>(
+        on highlighted: ID?, isVisible: Bool = true,
+        color: Color = SNColor.borderSubtle.opacity(0.85),
+        cornerRadius: CGFloat = SNFloatingSurface<EmptyView>.radius - SNFloatingSurface<EmptyView>.padding
+    ) -> some View {
+        backgroundPreferenceValue(MenuRowBoundsKey.self) { rows in
+            GeometryReader { proxy in
+                if let highlighted, let anchor = rows[AnyHashable(highlighted)] {
+                    let rect = proxy[anchor]
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .fill(color)
+                        .frame(width: rect.width, height: rect.height)
+                        .offset(x: rect.minX, y: rect.minY)
+                        .snAnimation(SNMotion.glide, value: highlighted)
+                        .opacity(isVisible ? 1 : 0)
+                        .snAnimation(SNMotion.highlightFade, value: isVisible)
+                        .transition(.opacity)
+                }
+            }
+        }
     }
 }
 
@@ -280,6 +361,8 @@ struct SNDropdown<Label: View>: View {
     var showsChevron = true
     /// Extra room around text labels so hover shapes don't hug the text.
     var labelPadding: CGFloat = 0
+    /// Minimum size of the trigger's hover shape.
+    var size = CGSize(width: 28, height: 26)
     var onOpenChange: (Bool) -> Void = { _ in }
     let entries: () -> [SNMenuEntry]
     @ViewBuilder let label: () -> Label
@@ -299,7 +382,7 @@ struct SNDropdown<Label: View>: View {
             }
             .padding(.horizontal, showsChevron ? max(6, labelPadding) : labelPadding)
         }
-        .buttonStyle(SNIconButtonStyle(isActive: isOpen, shape: shape))
+        .buttonStyle(SNIconButtonStyle(isActive: isOpen, shape: shape, size: size))
         .background(AnchorReader(box: anchor))
         .onDisappear { controller.close() }
     }
@@ -343,7 +426,16 @@ struct SNPopoverButton<Label: View, Panel: View>: View {
 /// Measures position only. Never takes part in hit testing, so clicks and
 /// drags reach the SwiftUI control it sits behind.
 final class PassthroughView: NSView {
+    /// Re-registers on every window change: SwiftUI can rebuild the view
+    /// without calling `updateNSView` again, which left the box pointing at nothing.
+    weak var box: AnchorBox?
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { box?.view = self }
+    }
 }
 
 /// Holds the AppKit view behind a SwiftUI control. Positions come from AppKit
@@ -363,13 +455,15 @@ final class AnchorBox {
 struct AnchorReader: NSViewRepresentable {
     let box: AnchorBox
 
-    func makeNSView(context: Context) -> NSView {
+    func makeNSView(context: Context) -> PassthroughView {
         let view = PassthroughView()
+        view.box = box
         box.view = view
         return view
     }
 
-    func updateNSView(_ view: NSView, context: Context) {
+    func updateNSView(_ view: PassthroughView, context: Context) {
+        view.box = box
         box.view = view
     }
 }

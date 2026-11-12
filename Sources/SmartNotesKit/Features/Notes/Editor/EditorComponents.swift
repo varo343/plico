@@ -35,8 +35,12 @@ extension BlockType {
         case .numberedItem: "Numbered List"
         case .checklistItem: "Checklist"
         case .quote: "Quote"
+        case .image: "Image"
         }
     }
+
+    /// Kinds a text block can be turned into (a picture is added, not turned into).
+    static var textKinds: [BlockType] { allCases.filter { $0 != .image } }
 }
 
 extension FontFamilyPreset {
@@ -66,11 +70,16 @@ struct NoteEditorToolbar: View {
         .accessibilityLabel("Formatting")
     }
 
+    /// Roomy hover shapes: the highlight sits around the glyph with air on
+    /// every side instead of hugging it.
+    private static let buttonSize = CGSize(width: 34, height: 30)
+    private static let textPadding: CGFloat = 10
+
     private func bar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 1) { content() }
+        HStack(spacing: 2) { content() }
             .foregroundStyle(SNColor.textPrimary)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 4)
             .background(SNColor.card, in: Capsule())
             .overlay(Capsule().strokeBorder(SNColor.borderSubtle, lineWidth: 1))
             .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
@@ -113,14 +122,14 @@ struct NoteEditorToolbar: View {
 
     private var linkButton: some View {
         Button { EditorActions.editLink() } label: { icon("link") }
-            .buttonStyle(SNIconButtonStyle(shape: .capsule))
+            .buttonStyle(SNIconButtonStyle(shape: .capsule, size: Self.buttonSize))
             .hoverLabel("Link  ⌘K")
             .accessibilityLabel("Link")
     }
 
     /// Compact bar: everything that didn't fit, in one menu.
     private var moreMenu: some View {
-        SNDropdown(minWidth: 210, shape: .capsule, showsChevron: false) {
+        SNDropdown(minWidth: 210, shape: .capsule, showsChevron: false, size: Self.buttonSize) {
             let family = model.selectionFontFamily
             let size = model.selectionFontSize
             return [.header("Blocks")]
@@ -148,7 +157,7 @@ struct NoteEditorToolbar: View {
     }
 
     private var divider: some View {
-        Rectangle().fill(SNColor.borderSubtle).frame(width: 1, height: 18).padding(.horizontal, 4)
+        Rectangle().fill(SNColor.borderSubtle).frame(width: 1, height: 18).padding(.horizontal, 6)
     }
 
     private func icon(_ symbol: String) -> some View {
@@ -158,7 +167,7 @@ struct NoteEditorToolbar: View {
     private func markButton(_ mark: InlineMark, symbol: String, label: String, shortcut: String?) -> some View {
         let isOn = model.selectionMarks.contains(mark) && model.hasTextSelection
         return Button { EditorActions.toggle(mark) } label: { icon(symbol) }
-            .buttonStyle(SNIconButtonStyle(isActive: isOn, shape: .capsule))
+            .buttonStyle(SNIconButtonStyle(isActive: isOn, shape: .capsule, size: Self.buttonSize))
             .hoverLabel(shortcut.map { "\(label)  \($0)" } ?? label)
             .accessibilityLabel(label)
             .accessibilityValue(isOn ? "On" : "Off")
@@ -168,15 +177,15 @@ struct NoteEditorToolbar: View {
     private func blockButton(_ type: BlockType, symbol: String, label: String, shortcut: String) -> some View {
         let isOn = model.activeBlock?.type == type
         return Button { model.setBlockType(isOn ? .paragraph : type) } label: { icon(symbol) }
-            .buttonStyle(SNIconButtonStyle(isActive: isOn, shape: .capsule))
+            .buttonStyle(SNIconButtonStyle(isActive: isOn, shape: .capsule, size: Self.buttonSize))
             .hoverLabel("\(label)  \(shortcut)  ·  /\(type.slashName)")
             .accessibilityLabel(label)
             .accessibilityValue(isOn ? "On" : "Off")
     }
 
     private var blockTypeMenu: some View {
-        SNDropdown(minWidth: 210, shape: .capsule) {
-            [.header("Turn into")] + BlockType.allCases.map { type in
+        SNDropdown(minWidth: 210, shape: .capsule, labelPadding: Self.textPadding, size: Self.buttonSize) {
+            [.header("Turn into")] + BlockType.textKinds.map { type in
                 .item(SNMenuItem(title: type.menuTitle, icon: type.symbol, isChecked: model.activeBlock?.type == type,
                                  shortcut: "/" + type.slashName) { model.setBlockType(type) })
             }
@@ -193,7 +202,7 @@ struct NoteEditorToolbar: View {
     }
 
     private var fontMenu: some View {
-        SNDropdown(minWidth: 180, shape: .capsule) {
+        SNDropdown(minWidth: 180, shape: .capsule, labelPadding: Self.textPadding, size: Self.buttonSize) {
             let current = model.selectionFontFamily
             return [.header("Font")]
                 + [.item(SNMenuItem(title: "Default", icon: "textformat", isChecked: current == nil) { model.setFontFamily(nil) })]
@@ -208,7 +217,7 @@ struct NoteEditorToolbar: View {
     }
 
     private var sizeMenu: some View {
-        SNDropdown(minWidth: 150, shape: .capsule) {
+        SNDropdown(minWidth: 150, shape: .capsule, labelPadding: Self.textPadding, size: Self.buttonSize) {
             let current = model.selectionFontSize
             return [.header("Size")]
                 + [.item(SNMenuItem(title: "Default", isChecked: current == nil) { model.setFontSize(nil) })]
@@ -234,12 +243,48 @@ extension BlockType {
         case .numberedItem: "list.number"
         case .checklistItem: "checklist"
         case .quote: "text.quote"
+        case .image: "photo"
         }
     }
 
     /// The slash command that turns a block into this kind.
     var slashName: String {
         SlashCommand.all.first { $0.type == self }?.name ?? rawValue
+    }
+}
+
+extension SlashCommand {
+    var symbol: String {
+        switch action {
+        case .turnInto(let type): type.symbol
+        case .tag(let tag): tag.symbol
+        case .customTag: "tag"
+        case .removeTag: "tag.slash"
+        case .nestedText: "text.alignleft"
+        case .otherColumn: "rectangle.split.2x1"
+        case .image: "photo"
+        }
+    }
+}
+
+extension SlashCommand.Section {
+    var title: String {
+        switch self {
+        case .turnInto: "TURN INTO"
+        case .add: "ADD"
+        case .tag: "TAG"
+        }
+    }
+}
+
+extension BlockTag {
+    var symbol: String {
+        switch self {
+        case .priority(.high): "exclamationmark.3"
+        case .priority(.medium): "exclamationmark.2"
+        case .priority: "exclamationmark"
+        case .custom: "tag"
+        }
     }
 }
 
@@ -287,10 +332,7 @@ struct BlockDragHandle: View {
                 isHovered = inside
                 if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
             }
-            .contextMenu {
-                Button("Move Up", action: moveUp)
-                Button("Move Down", action: moveDown)
-            }
+            // Right click: the row menu (a `RowMenuCatcher` over the grip, in the row).
             .snAnimation(SNMotion.hover, value: visibility)
             .accessibilityLabel("Move block")
             .accessibilityAction(named: "Move Up", moveUp)
@@ -311,18 +353,6 @@ struct GripDots: Shape {
             }
         }
         return path
-    }
-}
-
-/// Line showing where a dragged block will land.
-struct BlockInsertionIndicator: View {
-    var body: some View {
-        HStack(spacing: 0) {
-            Circle().stroke(SNColor.focusRing, lineWidth: 2).frame(width: 7, height: 7)
-            Rectangle().fill(SNColor.focusRing).frame(height: 2)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 

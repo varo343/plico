@@ -165,3 +165,72 @@ import Testing
         #expect(editor.rangeSelection == nil)
     }
 }
+
+@MainActor
+@Suite struct EditorTagTests {
+    private func makeEditor() throws -> NoteEditorModel {
+        let deps = try AppDependencies.inMemory()
+        let note = Note(createdAt: .now, manualRank: "i", blocks: [
+            NoteBlock(type: .checklistItem, rank: "a", content: RichText(plain: "Call supplier")),
+            NoteBlock(type: .checklistItem, rank: "b", content: RichText(plain: "Pay invoice"), tag: .custom("Admin")),
+        ])
+        try deps.notes.save(note)
+        return NoteEditorModel(note: note, repository: deps.notes, autosaveDelay: .seconds(60))
+    }
+
+    @Test func setTagIsUndoable() throws {
+        let editor = try makeEditor()
+        let id = editor.note.blocks[0].id
+        editor.setBlockTag(.priority(.medium), blockID: id)
+        #expect(editor.note.blocks[0].tag == .priority(.medium))
+        editor.undo()
+        #expect(editor.note.blocks[0].tag == nil)
+    }
+
+    @Test func customTagFromTheSlashMenuOpensThePicker() throws {
+        let editor = try makeEditor()
+        let id = editor.note.blocks[0].id
+        editor.setContent(RichText(plain: "Call supplier /tag"), ofBlock: id)
+        editor.updateSlashToken(SlashTrigger.Token(range: 14..<18, query: "tag"), blockID: id, anchor: nil)
+        // Untagged block: no "Remove tag".
+        #expect(editor.slashMenu?.commands.map(\.name) == ["high", "medium", "low", "custom"])
+        editor.applySlashCommand(SlashCommand.exact("custom"))
+        #expect(editor.note.blocks[0].content.plainText == "Call supplier ")
+        #expect(editor.tagPickerRequest?.blockID == id)
+        #expect(editor.customTagSuggestions == ["Admin"])
+    }
+
+    @Test func choosingTheCurrentTagChangesNothing() throws {
+        let editor = try makeEditor()
+        let id = editor.note.blocks[1].id
+        editor.setBlockTag(.custom("Admin"), blockID: id)
+        #expect(!editor.canUndo)
+        #expect(editor.focusRequest?.blockID == id)   // caret goes back to the line
+    }
+
+    @Test func removeTagOnlyOfferedOnTaggedBlocks() throws {
+        let editor = try makeEditor()
+        let id = editor.note.blocks[1].id
+        editor.updateSlashToken(SlashTrigger.Token(range: 0..<6, query: "untag"), blockID: id, anchor: nil)
+        #expect(editor.slashMenu?.commands.map(\.name) == ["untag"])
+        editor.applySlashCommand()
+        #expect(editor.note.blocks[1].tag == nil)
+    }
+}
+
+@MainActor
+@Suite struct SlashMenuHoverTests {
+    @Test func hoverMovesTheHighlightAndReturnAppliesIt() throws {
+        let deps = try AppDependencies.inMemory()
+        let block = NoteBlock(rank: "a", content: RichText(plain: "/"))
+        let editor = NoteEditorModel(note: Note(createdAt: .now, manualRank: "i", blocks: [block]), repository: deps.notes, autosaveDelay: .seconds(60))
+        editor.updateSlashToken(SlashTrigger.Token(range: 0..<1, query: ""), blockID: block.id, anchor: nil)
+        let bullet = try #require(editor.slashMenu?.commands.firstIndex { $0.name == "bullet" })
+        editor.highlightSlashCommand(at: bullet)
+        #expect(editor.slashMenu?.highlighted == bullet)
+        editor.highlightSlashCommand(at: 999)            // out of range: ignored
+        #expect(editor.slashMenu?.highlighted == bullet)
+        editor.applySlashCommand()
+        #expect(editor.note.blocks[0].type == .bulletItem)
+    }
+}

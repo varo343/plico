@@ -23,8 +23,9 @@ import Testing
         )
         column.frame = NSRect(x: 200, y: 0, width: 400, height: 400) // a "second column"
         container.addSubview(column)
-        // Wait for layout (the suite runs in parallel, so no fixed delay).
-        let deadline = ContinuousClock.now + .seconds(5)
+        // Wait for layout (the suite runs in parallel, so no fixed delay). Generous,
+        // like EditorHarness.pump: a loaded run can keep the main actor busy for seconds.
+        let deadline = ContinuousClock.now + .seconds(20)
         while (box.screenRect?.width ?? 0) < 1, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(20))
         }

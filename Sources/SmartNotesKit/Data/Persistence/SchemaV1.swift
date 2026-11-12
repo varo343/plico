@@ -1,7 +1,8 @@
 import Foundation
 import SwiftData
 
-/// Persisted schema, version 1.
+/// Persisted schema, version 1. Frozen: existing stores are migrated from it
+/// (see `SmartNotesMigrationPlan`), so never edit these models.
 ///
 /// Records are kept separate from the domain value types so the on-disk shape
 /// can evolve through `SmartNotesMigrationPlan` without touching views.
@@ -149,16 +150,3 @@ public enum SmartNotesSchemaV1: VersionedSchema {
         }
     }
 }
-
-/// Migration plan. Add `SmartNotesSchemaV2` + a stage here when the schema changes,
-/// together with a migration test using a V1 fixture store.
-public enum SmartNotesMigrationPlan: SchemaMigrationPlan {
-    public static var schemas: [any VersionedSchema.Type] { [SmartNotesSchemaV1.self] }
-    public static var stages: [MigrationStage] { [] }
-}
-
-// Current-version aliases used by repositories.
-public typealias NoteRecord = SmartNotesSchemaV1.NoteRecord
-public typealias BlockRecord = SmartNotesSchemaV1.BlockRecord
-public typealias ExternalItemRecord = SmartNotesSchemaV1.ExternalItemRecord
-public typealias IntegrationStateRecord = SmartNotesSchemaV1.IntegrationStateRecord

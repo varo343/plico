@@ -28,6 +28,10 @@ public final class OutlookModel {
     public var selectedItemID: UUID?
     /// Sample messages while Outlook isn't set up (never stored).
     public private(set) var isShowingSamples = false
+    /// When mentions last came in through the mentions folder (an agent reading
+    /// Outlook on the web, a flow); nil if they never did. See `MentionsFolder`.
+    public private(set) var lastFolderCheckAt: Date?
+    public var showsFolderMentions: Bool { lastFolderCheckAt != nil }
 
     public var configuration: OutlookConfiguration {
         didSet {
@@ -56,24 +60,48 @@ public final class OutlookModel {
     @ObservationIgnored private let preferences: OutlookPreferences
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var syncTask: Task<Void, Never>?
+    @ObservationIgnored private let mentionsFolder: URL?
+    @ObservationIgnored private var folderWatcher: FolderWatcher?
 
+    /// - Parameter mentionsFolder: where mentions files arrive (nil: none; see `MentionsFolder`).
     public init(repository: ExternalItemRepository, integrationStates: IntegrationStateRepository,
-                session: OutlookSession, preferences: OutlookPreferences, now: @escaping () -> Date = Date.init) {
+                session: OutlookSession, preferences: OutlookPreferences, mentionsFolder: URL? = nil,
+                now: @escaping () -> Date = Date.init) {
         self.repository = repository
         self.integrationStates = integrationStates
         self.session = session
         self.preferences = preferences
+        self.mentionsFolder = mentionsFolder
         self.now = now
         self.configuration = preferences.configuration()
         self.scope = preferences.scope()
         self.account = preferences.account()
+        self.lastFolderCheckAt = preferences.folderCheckedAt()
         if let account {
             status = .ready
             lastSyncAt = (try? integrationStates.state(provider: .outlook, accountId: account.id))?.lastSyncAt
-            reloadItems()
         } else {
             status = configuration.isComplete ? .disconnected : .notConfigured
         }
+        reloadItems()
+        if let mentionsFolder {
+            try? FileManager.default.createDirectory(at: mentionsFolder, withIntermediateDirectories: true)
+            folderWatcher = FolderWatcher(folder: mentionsFolder) { [weak self] in self?.importMentionsFolder() }
+            importMentionsFolder()
+        }
+    }
+
+    // MARK: Mentions folder
+
+    /// Reads the mentions files waiting in the folder (on launch, on app
+    /// activation and as soon as one is added).
+    public func importMentionsFolder() {
+        guard let mentionsFolder,
+              let checkedAt = MentionsFolder.importFiles(in: mentionsFolder, into: repository, now: now()) else { return }
+        lastFolderCheckAt = max(lastFolderCheckAt ?? .distantPast, checkedAt)
+        preferences.saveFolderCheckedAt(lastFolderCheckAt)
+        if isShowingSamples { showSamples(false) }
+        reloadItems()
     }
 
     // MARK: Connection
@@ -107,12 +135,14 @@ public final class OutlookModel {
         selectedItemID = nil
         lastSyncAt = nil
         status = configuration.isComplete ? .disconnected : .notConfigured
+        reloadItems()
     }
 
     // MARK: Sync
 
     /// Refreshes if the last sync is older than `minimumInterval` (launch, app activation).
     public func refreshIfStale(minimumInterval: TimeInterval = 120) {
+        importMentionsFolder()
         guard account != nil, status != .syncing else { return }
         if let lastSyncAt, now().timeIntervalSince(lastSyncAt) < minimumInterval { return }
         syncTask = Task { await refresh() }
@@ -199,12 +229,18 @@ public final class OutlookModel {
         isShowingSamples = show
         items = show ? Self.sampleItems(scope: scope) : []
         selectedItemID = nil
+        if !show { reloadItems() }
     }
 
+    /// The signed-in account's messages and those from the mentions folder, newest first.
     private func reloadItems() {
-        guard let account, !isShowingSamples else { return }
-        items = ((try? repository.items(provider: .outlook, accountId: account.id, includeDismissed: false)) ?? [])
+        guard !isShowingSamples else { return }
+        var accounts = account.map { [$0.id] } ?? []
+        if showsFolderMentions { accounts.append(MentionsFolder.accountID) }
+        items = accounts
+            .flatMap { (try? repository.items(provider: .outlook, accountId: $0, includeDismissed: false)) ?? [] }
             .filter { $0.importRule == scope.rawValue }
+            .sorted { $0.receivedAt > $1.receivedAt }
         if let selectedItemID, !items.contains(where: { $0.id == selectedItemID }) { self.selectedItemID = nil }
     }
 
@@ -237,6 +273,8 @@ public final class OutlookPreferences: @unchecked Sendable {
     func scope() -> OutlookImportScope { defaults.string(forKey: "SmartNotes.Outlook.Scope").flatMap(OutlookImportScope.init(rawValue:)) ?? .mentions }
     func saveScope(_ value: OutlookImportScope) { defaults.set(value.rawValue, forKey: "SmartNotes.Outlook.Scope") }
     func account() -> OutlookAccount? { decode("SmartNotes.Outlook.Account") }
+    func folderCheckedAt() -> Date? { defaults.object(forKey: "SmartNotes.Outlook.FolderCheckedAt") as? Date }
+    func saveFolderCheckedAt(_ value: Date?) { defaults.set(value, forKey: "SmartNotes.Outlook.FolderCheckedAt") }
     func saveAccount(_ value: OutlookAccount?) {
         if let value { encode(value, "SmartNotes.Outlook.Account") } else { defaults.removeObject(forKey: "SmartNotes.Outlook.Account") }
     }

@@ -30,6 +30,16 @@ public enum NoteExport {
         public var content: RichText
         public var isChecked: Bool
         public var indentLevel: Int
+        /// Omitted when the block has no tag.
+        public var tag: BlockTag?
+        /// Nested text; omitted when the block has none.
+        public var detail: RichText?
+        /// 1 for the right column; omitted for the left (or only) one.
+        public var column: Int?
+        /// An image block's picture, or a row's attached one (Base64 in the file); omitted otherwise.
+        public var image: Data?
+        /// The picture's chosen width in points; omitted at its own size.
+        public var imageWidth: Double?
     }
 
     public static func json(_ notes: [Note], exportedAt: Date) throws -> Data {
@@ -38,7 +48,11 @@ public enum NoteExport {
                 id: note.id, title: note.title, createdAt: note.createdAt, updatedAt: note.updatedAt,
                 deletedAt: note.deletedAt, isPinned: note.isPinned, priority: note.priority,
                 plannedDate: note.plannedDate, dueDate: note.dueDate,
-                blocks: note.blocks.map { ExportedBlock(type: $0.type, content: $0.content, isChecked: $0.isChecked, indentLevel: $0.indentLevel) }
+                blocks: note.blocks.map {
+                    ExportedBlock(type: $0.type, content: $0.content, isChecked: $0.isChecked, indentLevel: $0.indentLevel,
+                                  tag: $0.tag, detail: $0.detail.isEmpty ? nil : $0.detail,
+                                  column: $0.column == 0 ? nil : $0.column, image: $0.image?.data, imageWidth: $0.image == nil ? nil : $0.imageWidth)
+                }
             )
         })
         let encoder = JSONEncoder()
@@ -65,7 +79,7 @@ public enum NoteExport {
         var number = 0
         var previous: BlockType?
         for block in note.blocks {
-            let text = inline(block.content)
+            let text = inline(block.content) + (block.tag.map { " " + hashtag($0) } ?? "")
             let indent = String(repeating: "  ", count: block.indentLevel)
             number = block.type == .numberedItem ? (previous == .numberedItem ? number + 1 : 1) : 0
             // Blank line between non-list blocks so Markdown keeps them apart.
@@ -79,6 +93,17 @@ public enum NoteExport {
             case .numberedItem: lines.append(indent + "\(number). " + text)
             case .checklistItem: lines.append(indent + (block.isChecked ? "- [x] " : "- [ ] ") + text)
             case .quote: lines.append(text.split(separator: "\n", omittingEmptySubsequences: false).map { "> " + $0 }.joined(separator: "\n"))
+            // The picture itself is in the JSON export; Markdown names it.
+            case .image: lines.append("*[Image" + (block.content.isEmpty ? "" : ": " + text) + "]*")
+            }
+            // A picture attached to a row, named under it.
+            if block.type != .image, block.image != nil { lines.append(indent + (block.type.isListLike ? "  " : "") + "*[Image]*") }
+            // Nested text: a quote under its block, indented to stay part of a list item.
+            if !block.detail.isEmpty {
+                let nestedIndent = block.type.isListLike ? indent + "  " : ""
+                if !block.type.isListLike { lines.append("") }
+                // Splitting after the "  " of each hard break keeps the breaks inside the quote.
+                lines += inline(block.detail).split(separator: "\n", omittingEmptySubsequences: false).map { nestedIndent + "> " + $0 }
             }
             previous = block.type
         }
@@ -114,6 +139,12 @@ public enum NoteExport {
             if let link = run.link { value = "[" + value + "](" + link.absoluteString + ")" }
             return value
         }.joined()
+    }
+
+    /// "#high", "#client-review": readable in other Markdown apps that use hashtags.
+    private static func hashtag(_ tag: BlockTag) -> String {
+        let words = tag.label.lowercased().components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        return "#" + escapeInline(words.joined(separator: "-"))
     }
 
     private static func escapeInline(_ text: String) -> String {

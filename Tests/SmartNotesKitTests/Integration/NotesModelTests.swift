@@ -77,8 +77,9 @@ final class TestClock {
         let editor = try #require(model.editor)
         editor.setTitle("Debounced")
         #expect(try deps.notes.note(id: editor.note.id)?.title != "Debounced")
-        // Poll rather than sleep a fixed time: parallel main-actor tests can delay the save.
-        let deadline = ContinuousClock.now + .seconds(5)
+        // Poll rather than sleep a fixed time: parallel main-actor tests (the hosting
+        // suites) can hold the main actor for several seconds and delay the save.
+        let deadline = ContinuousClock.now + .seconds(15)
         while editor.hasUnsavedChanges, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
@@ -138,10 +139,10 @@ final class TestClock {
         #expect(model.groups.all.isEmpty && model.hasAnyNotes)
     }
 
-    @Test func sortModePersistsAndDisablesReorder() throws {
+    @Test func sortModePersistsAndKeepsReorderAvailable() throws {
         let (model, deps, _) = try makeModel()
         model.sortMode = .title
-        #expect(!model.canReorder)
+        #expect(model.canReorder)
         #expect(deps.settings.load().sortMode == .title)
         let titles = model.groups.others.map(\.displayTitle)
         #expect(titles == titles.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
@@ -162,12 +163,33 @@ final class TestClock {
         #expect(reloaded.groups.others.map(\.id) == expected)
     }
 
-    @Test func moveIsIgnoredOutsideManualSort() throws {
+    @Test func dragOutsideManualSortSwitchesToManualFromTheShownOrder() throws {
+        let (model, deps, _) = try makeModel()
+        model.sortMode = .title
+        let shown = model.groups.others.map(\.id)
+        let pinned = model.groups.pinned.map(\.id)
+        #expect(shown.count >= 3)
+        model.moveNote(shown[0], relativeTo: shown[2], placeAfter: true)
+        // Only the dragged note moved; everything else keeps the title order.
+        let expected = [shown[1], shown[2], shown[0]] + shown.dropFirst(3)
+        #expect(model.sortMode == .manual)
+        #expect(deps.settings.load().sortMode == .manual)
+        #expect(model.groups.others.map(\.id) == expected)
+        #expect(model.groups.pinned.map(\.id) == pinned)
+
+        let reloaded = NotesModel(repository: deps.notes, settings: deps.settings)
+        reloaded.load()
+        #expect(reloaded.groups.others.map(\.id) == expected)
+    }
+
+    @Test func moveIsIgnoredWhileSearching() throws {
         let (model, _, _) = try makeModel()
-        model.sortMode = .updated
+        model.sortMode = .title
+        model.searchQuery = "e"
         let before = model.groups.others.map(\.id)
         model.move(inPinnedGroup: false, from: [0], to: 2)
         #expect(model.groups.others.map(\.id) == before)
+        #expect(model.sortMode == .title)
     }
 
     @Test func duplicatePlacesCopyAfterOriginalAndSelectsIt() throws {

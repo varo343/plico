@@ -1,10 +1,5 @@
+import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
-
-extension UTType {
-    /// In-app note-row drags (declared in the app's Info.plist).
-    static let smartNotesNote = UTType(exportedAs: "local.smartnotes.note")
-}
 
 /// Middle column: header, search, sort menu, and the pinned/unpinned list.
 /// Custom rows (not a system table) so selection, hover and drag match the
@@ -13,8 +8,13 @@ struct NotesListView: View {
     @Bindable var model: NotesModel
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
-    @State private var draggingNoteID: UUID?
+    @State private var drag: NoteDrag?
     @State private var dropTarget: DropTarget?
+    /// Where the rows are, for dragging. Not state: it changes on every layout
+    /// (animations, resizing), and as state each change re-rendered the list.
+    @State private var rowFrames = RowFrames()
+
+    private static let listSpace = "SmartNotes.noteList"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -47,12 +47,13 @@ struct NotesListView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: SNSpacing.xs) {
             searchField
-            if model.hasAnyNotes, !model.canReorder {
-                Label(model.isSearching ? "Clear search to reorder" : "Sorted by \(model.sortMode.label.lowercased())",
+            if model.hasAnyNotes, model.isSearching || model.sortMode != .manual {
+                Label(model.isSearching ? "Clear search to reorder" : "Sorted by \(model.sortMode.label.lowercased()) · drag to reorder",
                       systemImage: model.isSearching ? "line.3.horizontal.decrease" : "arrow.up.arrow.down")
                     .font(.system(size: 11))
                     .foregroundStyle(SNColor.textSecondary)
-                    .help("Drag to reorder is available in Manual sort")
+                    .help(model.isSearching ? "Notes can't be reordered while searching"
+                                            : "Dragging a note switches to Manual sort, starting from this order")
             }
         }
         .padding(.horizontal, SNSpacing.m)
@@ -102,9 +103,14 @@ struct NotesListView: View {
                     }
                     rows(model.groups.others)
                 }
+                // One hover highlight gliding between notes, hidden while dragging one.
+                .glidingHover(isEnabled: drag == nil)
                 .padding(.horizontal, SNSpacing.xs)
                 .padding(.bottom, SNSpacing.l)
+                .coordinateSpace(name: Self.listSpace)
                 .snAnimation(SNMotion.snappy, value: model.groups)
+                // Rows slide out of the way as the drop position changes.
+                .snAnimation(SNMotion.snappy, value: dropTarget)
                 .snAnimation(SNMotion.hover, value: model.selectedNoteID)
             }
             .focusable()
@@ -145,6 +151,8 @@ struct NotesListView: View {
                 model.select(note.id)
                 listFocused = true
             }
+            .equatable()
+            .glidingHoverRow(note.id)
             .id(note.id)
             .contextMenu {
                 Button(note.isPinned ? "Unpin" : "Pin") { model.togglePin(note.id) }
@@ -152,81 +160,81 @@ struct NotesListView: View {
                 Divider()
                 Button("Move to Trash", role: .destructive) { model.moveToTrash(note.id) }
             }
-            .overlay(alignment: dropTarget?.placeAfter == true ? .bottom : .top) {
-                if dropTarget?.itemID == note.id {
-                    BlockInsertionIndicator().padding(.horizontal, SNSpacing.xs).offset(y: dropTarget?.placeAfter == true ? 2 : -2)
-                }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.listSpace)) } action: { [rowFrames] frame in
+                rowFrames.frames[note.id] = frame
             }
-            .modifier(NoteRowDrag(
-                note: note, enabled: model.canReorder, model: model,
-                draggingNoteID: $draggingNoteID, dropTarget: $dropTarget
-            ))
+            // The dragged row lifts and follows the pointer.
+            // Always present, faded in and out, for the same reason as the selection card.
+            .background {
+                RoundedRectangle(cornerRadius: SNRadius.standard)
+                    .fill(SNColor.card)
+                    .shadow(color: .black.opacity(0.16), radius: 10, y: 5)
+                    .opacity(drag?.noteID == note.id ? 1 : 0)
+            }
+            .scaleEffect(drag?.noteID == note.id ? 1.02 : 1)
+            .offset(y: drag?.noteID == note.id ? (drag?.offset ?? 0) : previewShift(of: note.id, in: notes))
+            // The dragged row tracks the pointer exactly; only the others animate.
+            .transaction { if drag?.noteID == note.id { $0.animation = nil } }
+            .zIndex(drag?.noteID == note.id ? 1 : 0)
+            // Simultaneous, so a plain click still selects the note. A system drag
+            // (.onDrag) never started here: the row's Button swallowed the mouse.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.listSpace))
+                    .onChanged { dragChanged(note.id, in: notes, $0) }
+                    .onEnded { _ in dragEnded(note.id) },
+                including: model.canReorder ? .all : .subviews
+            )
+            .help(model.canReorder ? "" : "Clear the search to reorder notes by dragging")
         }
     }
-}
 
-/// Drag to reorder (Manual sort only). Disabled with an explanation otherwise.
-private struct NoteRowDrag: ViewModifier {
-    let note: NoteSummary
-    let enabled: Bool
-    let model: NotesModel
-    @Binding var draggingNoteID: UUID?
-    @Binding var dropTarget: DropTarget?
-    @State private var height: CGFloat = 0
+    // MARK: Drag to reorder
 
-    func body(content: Content) -> some View {
-        if enabled {
-            content
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
-                .onDrag {
-                    draggingNoteID = note.id
-                    let provider = NSItemProvider()
-                    provider.registerDataRepresentation(forTypeIdentifier: UTType.smartNotesNote.identifier, visibility: .ownProcess) { done in
-                        done(Data(note.id.uuidString.utf8), nil)
-                        return nil
-                    }
-                    return provider
-                }
-                .onDrop(of: [.smartNotesNote], delegate: NoteDropDelegate(
-                    targetID: note.id, height: height, model: model,
-                    draggingNoteID: $draggingNoteID, dropTarget: $dropTarget
-                ))
+    /// How far a row slides to make room for the dragged note (live preview).
+    private func previewShift(of id: UUID, in group: [NoteSummary]) -> CGFloat {
+        guard let drag, let height = rowFrames.frames[drag.noteID]?.height else { return 0 }
+        let target = dropTarget.map { DropResolver.Target(id: $0.itemID, placeAfter: $0.placeAfter) }
+        return DropResolver.previewOffset(of: id, order: group.map(\.id), dragged: drag.noteID, target: target, gap: height + 2)
+    }
+
+    /// Notes move within their own group (pinned or not), so only that group's
+    /// rows are drop targets.
+    private func dragChanged(_ id: UUID, in group: [NoteSummary], _ value: DragGesture.Value) {
+        if drag?.noteID != id {
+            drag = NoteDrag(noteID: id, startY: value.startLocation.y, currentY: value.location.y)
+            NSCursor.closedHand.push()
         } else {
-            content.help("Choose Manual sort to reorder notes by dragging")
+            drag?.currentY = value.location.y
         }
+        let frames = group.compactMap { note in rowFrames.frames[note.id].map { (id: note.id, frame: $0) } }
+        let target = DropResolver.target(pointerY: value.location.y, frames: frames, dragged: id)
+            .map { DropTarget(itemID: $0.id, placeAfter: $0.placeAfter) }
+        if target != dropTarget { dropTarget = target }
+    }
+
+    private func dragEnded(_ id: UUID) {
+        if let target = dropTarget {
+            model.moveNote(id, relativeTo: target.itemID, placeAfter: target.placeAfter)
+        }
+        if drag != nil { NSCursor.pop() }
+        drag = nil
+        dropTarget = nil
     }
 }
 
-private struct NoteDropDelegate: DropDelegate {
-    let targetID: UUID
-    let height: CGFloat
-    let model: NotesModel
-    @Binding var draggingNoteID: UUID?
-    @Binding var dropTarget: DropTarget?
-
-    func validateDrop(info: DropInfo) -> Bool {
-        draggingNoteID != nil && info.hasItemsConforming(to: [.smartNotesNote])
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        let target = DropTarget(itemID: targetID, placeAfter: info.location.y > height / 2)
-        if dropTarget != target { dropTarget = target }
-        return DropProposal(operation: .move)
-    }
-
-    func dropExited(info: DropInfo) {
-        if dropTarget?.itemID == targetID { dropTarget = nil }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        defer { draggingNoteID = nil; dropTarget = nil }
-        guard let dragged = draggingNoteID else { return false }
-        model.moveNote(dragged, relativeTo: targetID, placeAfter: info.location.y > height / 2)
-        return true
-    }
+/// The note being dragged and how far the pointer has moved.
+private struct NoteDrag: Equatable {
+    var noteID: UUID
+    var startY: CGFloat
+    var currentY: CGFloat
+    var offset: CGFloat { currentY - startY }
 }
 
-struct NoteListRow: View {
+private final class RowFrames {
+    var frames: [UUID: CGRect] = [:]
+}
+
+struct NoteListRow: View, @MainActor Equatable {
     let note: NoteSummary
     var isSelected = false
     var isListFocused = false
@@ -238,6 +246,13 @@ struct NoteListRow: View {
     @State private var isMenuOpen = false
 
     private var showsActions: Bool { notes != nil && (isHovered || isMenuOpen) }
+
+    /// Rows re-render only when their own note or state changes (the action
+    /// always selects this row's note).
+    static func == (lhs: NoteListRow, rhs: NoteListRow) -> Bool {
+        lhs.note == rhs.note && lhs.isSelected == rhs.isSelected && lhs.isListFocused == rhs.isListFocused
+            && lhs.notes === rhs.notes && lhs.today == rhs.today
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -297,16 +312,16 @@ struct NoteListRow: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    @ViewBuilder
+    /// Always in place; only its opacity follows the state. A selection card
+    /// inserted and removed with a transition could be left behind in the lazy
+    /// list (two rows looking selected) when the list reloaded mid-animation.
     private var rowBackground: some View {
         let shape = RoundedRectangle(cornerRadius: SNRadius.standard)
-        if isSelected {
-            shape.fill(SNColor.card)
-                .overlay(shape.strokeBorder(isListFocused ? SNColor.focusRing.opacity(0.6) : SNColor.borderSubtle, lineWidth: 1))
-                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-        } else if isHovered {
-            shape.fill(SNColor.borderSubtle.opacity(0.45))
-        }
+        // The hover highlight is the list's, gliding between rows (NotesListView).
+        return shape.fill(SNColor.card)
+            .overlay(shape.strokeBorder(isListFocused ? SNColor.focusRing.opacity(0.6) : SNColor.borderSubtle, lineWidth: 1))
+            .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+            .opacity(isSelected ? 1 : 0)
     }
 }
 

@@ -66,6 +66,8 @@ extension BlockEditing {
         let tail = note.blocks[endIndex].content.split(atUTF16Offset: end.offset).tail
         note.blocks[startIndex].content = head + tail
         if endIndex > startIndex {
+            // The last block's remaining text joins the first, and so does its nested text.
+            note.blocks[startIndex].detail = joiningDetails(note.blocks[startIndex].detail, note.blocks[endIndex].detail)
             note.blocks.removeSubrange((startIndex + 1)...endIndex)
         }
         return Result(note: note, focusBlockID: start.blockID, focusOffset: head.utf16Length)
@@ -77,7 +79,9 @@ extension BlockEditing {
             guard let block = note.blocks.first(where: { $0.id == segment.blockID }) else { return nil }
             let content = block.content.split(atUTF16Offset: segment.range.lowerBound).tail
                 .split(atUTF16Offset: segment.range.count).head
-            return PastedParagraph(type: block.type, content: content, indentLevel: block.indentLevel, isChecked: block.isChecked)
+            return PastedParagraph(type: block.type, content: content, indentLevel: block.indentLevel, isChecked: block.isChecked,
+                                   tag: block.tag, detail: block.detail.isEmpty ? nil : block.detail,
+                                   image: block.image, imageWidth: block.imageWidth)
         }
     }
 

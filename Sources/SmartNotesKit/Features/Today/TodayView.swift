@@ -30,6 +30,8 @@ struct TodayView: View {
                             )
                         }
                     }
+                    // One hover highlight gliding between cards, across sections.
+                    .glidingHover(color: SNColor.borderSubtle.opacity(0.35))
                     .padding(SNSpacing.m)
                     .padding(.bottom, SNSpacing.l)
                 }
@@ -78,6 +80,7 @@ private struct TodaySectionView: View {
             ForEach(section.items) { item in
                 TodayCard(item: item, today: today, showsCompleted: showsCompleted,
                           isSelected: item.id == selectedID) { open(item.id) }
+                    .glidingHoverRow(item.id)
             }
         }
     }
@@ -109,7 +112,8 @@ private struct TodayCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(SNSpacing.s)
-            .background(isHovered && !isSelected ? SNColor.borderSubtle.opacity(0.35) : SNColor.card,
+            // Hovered, the card clears to show the list's gliding highlight under it.
+            .background(SNColor.card.opacity(isHovered && !isSelected ? 0 : 1),
                         in: RoundedRectangle(cornerRadius: SNRadius.standard))
             .overlay(
                 RoundedRectangle(cornerRadius: SNRadius.standard)

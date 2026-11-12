@@ -141,7 +141,7 @@ public final class SwiftDataNoteRepository: NoteRepository {
 
     /// Writes title and blocks plus everything derived from them.
     private func applyContent(to record: NoteRecord, title: String, blocks: [NoteBlock]) throws {
-        let sorted = blocks.sorted { $0.rank < $1.rank }
+        let sorted = Note.ordered(blocks)
         let body = sorted.map(\.content.plainText).joined(separator: "\n")
         record.title = title
         record.searchText = NoteText.searchText(title: title, blocks: sorted)
@@ -156,16 +156,32 @@ public final class SwiftDataNoteRepository: NoteRepository {
         var existing = Dictionary(record.blocks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for block in blocks {
             let data = try block.content.encodedData()
+            let detailData = block.detail.isEmpty ? nil : try block.detail.encodedData()
+            let column = block.column == 0 ? nil : block.column
+            // An image block's picture, or a picture attached to a row.
+            let image = block.image
+            let imageWidth = image == nil ? nil : block.imageWidth
             if let blockRecord = existing.removeValue(forKey: block.id) {
                 if blockRecord.typeRaw != block.type.rawValue { blockRecord.typeRaw = block.type.rawValue }
                 if blockRecord.rank != block.rank { blockRecord.rank = block.rank }
                 if blockRecord.contentData != data { blockRecord.contentData = data }
                 if blockRecord.isChecked != block.isChecked { blockRecord.isChecked = block.isChecked }
                 if blockRecord.indentLevel != block.indentLevel { blockRecord.indentLevel = block.indentLevel }
+                if blockRecord.tagRaw != block.tag?.storageValue { blockRecord.tagRaw = block.tag?.storageValue }
+                if blockRecord.detailData != detailData { blockRecord.detailData = detailData }
+                if blockRecord.columnIndex != column { blockRecord.columnIndex = column }
+                if blockRecord.imageWidth != imageWidth { blockRecord.imageWidth = imageWidth }
+                // Compared by ID: reading the stored picture back just to compare it would be slow.
+                if blockRecord.imageID != image?.id {
+                    blockRecord.imageID = image?.id
+                    blockRecord.imageData = image?.data
+                }
             } else {
                 let blockRecord = BlockRecord(
                     id: block.id, typeRaw: block.type.rawValue, rank: block.rank, contentData: data,
-                    isChecked: block.isChecked, indentLevel: block.indentLevel
+                    isChecked: block.isChecked, indentLevel: block.indentLevel, tagRaw: block.tag?.storageValue,
+                    detailData: detailData, columnIndex: column, imageData: image?.data, imageID: image?.id,
+                    imageWidth: imageWidth
                 )
                 context.insert(blockRecord)
                 blockRecord.note = record
@@ -190,8 +206,10 @@ public final class SwiftDataNoteRepository: NoteRepository {
     private static func note(from r: NoteRecord) throws -> Note {
         let blocks = try r.blocks.map { b in
             let content: RichText
+            let detail: RichText
             do {
                 content = try RichText.decode(from: b.contentData)
+                detail = try b.detailData.map(RichText.decode(from:)) ?? .empty
             } catch {
                 // Surface instead of silently dropping the block's text.
                 throw PersistenceError.undecodableBlock(id: b.id, underlying: error)
@@ -200,7 +218,13 @@ public final class SwiftDataNoteRepository: NoteRepository {
                 id: b.id,
                 // Unknown type raw values degrade to paragraph; the text is kept.
                 type: BlockType(rawValue: b.typeRaw) ?? .paragraph,
-                rank: b.rank, content: content, isChecked: b.isChecked, indentLevel: b.indentLevel
+                rank: b.rank, content: content, isChecked: b.isChecked, indentLevel: b.indentLevel,
+                // An unknown tag value is dropped; the block itself is kept.
+                tag: b.tagRaw.flatMap(BlockTag.init(storageValue:)),
+                detail: detail,
+                column: b.columnIndex ?? 0,
+                image: b.imageData.map { NoteImage(storedData: $0, id: b.imageID ?? b.id) },
+                imageWidth: b.imageWidth
             )
         }
         return Note(

@@ -4,7 +4,11 @@ import SwiftUI
 /// Invisible handle on the list column's trailing edge: drag to resize
 /// (the width is remembered), with the standard resize cursor on hover.
 struct ColumnResizeHandle: View {
-    static let minWidth: CGFloat = 270
+    /// Fits the header in its widest state: the section switcher with its longest
+    /// name expanded on hover (≈221), plus the Mentions controls (58), spacing and
+    /// margins. Narrower, hovering a section pushed the header past the column.
+    /// `ListColumnLayoutTests` keeps this in sync with the real views.
+    static let minWidth: CGFloat = 320
     static let maxWidth: CGFloat = 440
 
     @Binding var width: Double

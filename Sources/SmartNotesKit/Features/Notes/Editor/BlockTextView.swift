@@ -32,6 +32,23 @@ struct BlockTextActions {
     var onSlashDismiss: () -> Void
     /// Pointer entered/left the text (SwiftUI hover doesn't fire over an NSTextView).
     var onHoverChange: (Bool) -> Void = { _ in }
+    /// Context-menu entry for the block's nested text ("Add Nested Text"…); nil hides it.
+    var nestedTextMenuTitle: String?
+    var onNestedText: () -> Void = {}
+    /// Pictures dragged over the text: whether they would go after the block
+    /// (true) or before it; nil when the drag leaves.
+    var onImageDragHover: (Bool?) -> Void = { _ in }
+    /// Pictures dropped on the text (the image data, and after the block or before it).
+    var onImageDrop: ([Data], Bool) -> Void = { _, _ in }
+    /// A right click (or ⌃-click) on the text opens the row menu (see
+    /// `RowMenu`); nil keeps the standard text menu (nested text).
+    var showRowMenu: ((NSEvent, NSTextView) -> Void)?
+}
+
+/// Where one row of nested text starts, in its text view's coordinates.
+struct NestedRowFrame: Equatable {
+    var range: Range<Int>
+    var frame: CGRect
 }
 
 /// One logical block's text, edited by a TextKit 1 NSTextView. Each block is
@@ -48,6 +65,10 @@ struct BlockTextView: NSViewRepresentable {
     /// This block's part of a multi-block selection, if any.
     var rangeHighlight: Range<Int>?
     var isRangeSelecting = false
+    /// Edits a block's nested text: Return adds a line instead of a new block.
+    var isNestedText = false
+    /// Nested text: where each draggable row starts, so a grip can sit beside it.
+    var onRowFrames: (([NestedRowFrame]) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -58,6 +79,8 @@ struct BlockTextView: NSViewRepresentable {
         context.coordinator.parent = self
         apply(to: view, coordinator: context.coordinator)
         view.blockID = blockID
+        view.isNestedText = isNestedText
+        view.onRowFrames = onRowFrames
         view.tracker = tracker
         tracker?.register(view, for: blockID)
         view.setRangeHighlight(rangeHighlight, isActive: isRangeSelecting)
@@ -70,13 +93,15 @@ struct BlockTextView: NSViewRepresentable {
             apply(to: view, coordinator: context.coordinator)
         }
         view.setAccessibilityLabel(accessibilityLabel)
+        view.onRowFrames = onRowFrames
         if view.tracker !== tracker || view.blockID != blockID {
             view.blockID = blockID
             view.tracker = tracker
             tracker?.register(view, for: blockID)
         }
         view.setRangeHighlight(rangeHighlight, isActive: isRangeSelecting)
-        if let request = focusRequest, request.blockID == blockID, request.token != context.coordinator.handledFocusToken {
+        if let request = focusRequest, request.blockID == blockID, request.isDetail == isNestedText,
+           request.token != context.coordinator.handledFocusToken {
             context.coordinator.handledFocusToken = request.token
             view.focus(atUTF16Offset: request.offset, length: request.length, scrollsIntoView: request.scrollsIntoView)
         }
@@ -84,6 +109,10 @@ struct BlockTextView: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: BlockNSTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 480
+        // The row's HStack asks how wide the text could grow: as wide as
+        // offered. Its height there is never used, so the text isn't laid out
+        // again for it (that was every second measurement while typing).
+        if width.isInfinite { return CGSize(width: width, height: style.lineHeight) }
         return CGSize(width: width, height: nsView.height(forWidth: width, minimumLineHeight: style.lineHeight))
     }
 
@@ -103,6 +132,7 @@ struct BlockTextView: NSViewRepresentable {
         coordinator.lastStyle = style
         view.refreshRangeHighlight()
         view.invalidateIntrinsicContentSize()
+        view.reportRowFrames()
     }
 
     @MainActor
@@ -119,6 +149,7 @@ struct BlockTextView: NSViewRepresentable {
             lastContent = content
             view.invalidateIntrinsicContentSize()
             parent?.actions.onChange(content)
+            view.reportRowFrames()
             let caret = view.selectedRange()
             if caret.length == 0, let (command, range) = SlashTrigger.completedCommand(in: view.string, caret: caret.location) {
                 parent?.actions.onSlashCompleted(command, range)
@@ -159,6 +190,9 @@ struct BlockTextView: NSViewRepresentable {
                 }
             }
             switch selector {
+            case #selector(NSResponder.insertNewline(_:)) where parent.isNestedText:
+                view.insertText("\n", replacementRange: selection)
+                return true
             case #selector(NSResponder.insertNewline(_:)):
                 // Shift+Return is handled in keyDown as a soft break.
                 if selection.length > 0 {
@@ -199,7 +233,8 @@ struct BlockTextView: NSViewRepresentable {
             return true
         }
 
-        /// Adds block commands to the standard text context menu.
+        /// Adds block commands to the standard text context menu (nested text;
+        /// a block's own text opens the row menu instead, see `rightMouseDown`).
         func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
             menu.addItem(.separator())
             let up = NSMenuItem(title: "Move Block Up", action: #selector(moveBlockUp), keyEquivalent: "")
@@ -208,9 +243,15 @@ struct BlockTextView: NSViewRepresentable {
             down.target = self
             menu.addItem(up)
             menu.addItem(down)
+            if let title = parent?.actions.nestedTextMenuTitle {
+                let nested = NSMenuItem(title: title, action: #selector(nestedText), keyEquivalent: "")
+                nested.target = self
+                menu.addItem(nested)
+            }
             return menu
         }
 
+        @objc func nestedText() { parent?.actions.onNestedText() }
         @objc func moveBlockUp() { parent?.actions.onMoveBlock(-1) }
         @objc func moveBlockDown() { parent?.actions.onMoveBlock(1) }
     }
@@ -224,6 +265,8 @@ final class BlockNSTextView: NSTextView {
     private var actions: BlockTextActions? { coordinator?.parent?.actions }
     weak var tracker: BlockSelectionTracker?
     var blockID: UUID?
+    /// Shows a block's nested text rather than its main text.
+    var isNestedText = false
     private var rangeHighlight: Range<Int>?
     private var hidesInsertionPoint = false
     /// Multi-block selection covering this block (owned by the model).
@@ -314,6 +357,10 @@ final class BlockNSTextView: NSTextView {
     /// into other blocks. Double/triple clicks, modified clicks, links and
     /// dragging an existing selection keep the standard behaviour.
     override func mouseDown(with event: NSEvent) {
+        // ⌃-click: the row menu, like a right click.
+        if RowMenuCatcherView.isMenuClick(event), let show = actions?.showRowMenu {
+            return show(event, self)
+        }
         guard let tracker, let blockID, let window, event.clickCount == 1, !hasMarkedText() else {
             tracker?.clear()
             return super.mouseDown(with: event)
@@ -324,7 +371,8 @@ final class BlockNSTextView: NSTextView {
 
         // Shift-click in another block extends from the caret into this one.
         if modifiers == .shift, let model = tracker.model,
-           let anchor = model.rangeSelection?.anchor ?? model.selection.map({ BlockPosition(blockID: $0.blockID, offset: $0.range.lowerBound) }),
+           let anchor = model.rangeSelection?.anchor
+               ?? model.selection.flatMap({ $0.isDetail ? nil : BlockPosition(blockID: $0.blockID, offset: $0.range.lowerBound) }),
            anchor.blockID != blockID {
             tracker.select(from: anchor, to: BlockPosition(blockID: blockID, offset: index))
             return
@@ -340,6 +388,7 @@ final class BlockNSTextView: NSTextView {
         window.makeFirstResponder(self)
         setSelectedRange(NSRange(location: index, length: 0))
         let anchor = BlockPosition(blockID: blockID, offset: index)
+        let column = tracker.model?.note.blocks.first { $0.id == blockID }?.column
         var lastDrag = event
         NSEvent.startPeriodicEvents(afterDelay: 0.1, withPeriod: 0.05)
         defer { NSEvent.stopPeriodicEvents() }
@@ -350,7 +399,7 @@ final class BlockNSTextView: NSTextView {
             // Keeps scrolling while the pointer rests past the editor's edge.
             autoscroll(with: lastDrag)
             let location = next.type == .leftMouseDragged ? next.locationInWindow : window.mouseLocationOutsideOfEventStream
-            guard let focus = tracker.position(atWindowPoint: location) else { continue }
+            guard let focus = tracker.position(atWindowPoint: location, inColumn: column) else { continue }
             if focus.blockID == blockID {
                 tracker.clear()
                 let lower = min(index, focus.offset)
@@ -449,6 +498,12 @@ final class BlockNSTextView: NSTextView {
         switch item.action {
         case #selector(undo(_:)): return actions?.canUndo() ?? false
         case #selector(redo(_:)): return actions?.canRedo() ?? false
+        // A multi-block selection leaves this view's own selection empty, which
+        // NSTextView alone would treat as "nothing to copy".
+        case #selector(copy(_:)) where rangeSelectionModel != nil,
+             #selector(cut(_:)) where rangeSelectionModel != nil,
+             #selector(delete(_:)) where rangeSelectionModel != nil:
+            return true
         default: return super.validateUserInterfaceItem(item)
         }
     }
@@ -486,6 +541,89 @@ final class BlockNSTextView: NSTextView {
     /// Formatting that typing at the caret would use.
     private var typingRun: TextRun {
         RichTextAttributes.richText(from: NSAttributedString(string: "x", attributes: typingAttributes)).runs.first ?? TextRun("")
+    }
+
+    // MARK: Row menu
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let show = actions?.showRowMenu else { return super.rightMouseDown(with: event) }
+        show(event, self)
+    }
+
+    // MARK: Dropping pictures
+
+    /// Text drags work as usual; a drag carrying pictures is offered to the
+    /// note instead, which puts them in as blocks next to this one.
+    private var isImageDrag = false
+
+    override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
+        super.acceptableDragTypes + ImageDrop.pasteboardTypes.filter { !super.acceptableDragTypes.contains($0) }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        isImageDrag = ImageDrop.hasImages(sender.draggingPasteboard)
+        return isImageDrag ? imageDragUpdated(sender) : super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        isImageDrag ? imageDragUpdated(sender) : super.draggingUpdated(sender)
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        if isImageDrag {
+            actions?.onImageDragHover(nil)
+        } else {
+            super.draggingExited(sender)
+        }
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        isImageDrag || super.prepareForDragOperation(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if !isImageDrag, dropNamedLink(sender) { return true }
+        guard isImageDrag else { return super.performDragOperation(sender) }
+        let payload = ImageDrop.payload(from: sender.draggingPasteboard)
+        actions?.onImageDragHover(nil)
+        guard !payload.isEmpty, let drop = actions?.onImageDrop else { return false }
+        let after = placesImagesAfter(sender)
+        // Promised files (a screenshot thumbnail, a browser) arrive after the drop.
+        Task { drop(await ImageDrop.load(payload), after) }
+        return true
+    }
+
+    override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+        if isImageDrag { isImageDrag = false } else { super.concludeDragOperation(sender) }
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        isImageDrag = false
+        super.draggingEnded(sender)
+    }
+
+    /// A web address dragged in from another app (a browser's link or address
+    /// bar) goes in as a named link, as when pasted. Text dragged within Plico
+    /// moves as usual.
+    private func dropNamedLink(_ sender: NSDraggingInfo) -> Bool {
+        guard !(sender.draggingSource is NSTextView), let actions,
+              let link = PasteConverter.namedLink(from: sender.draggingPasteboard, template: typingRun) else { return false }
+        let index = min(characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil)), (string as NSString).length)
+        rangeSelectionModel?.clearRangeSelection()
+        tracker?.render()
+        window?.makeFirstResponder(self)
+        actions.onPaste([link], index..<index)
+        return true
+    }
+
+    private func imageDragUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        actions?.onImageDragHover(placesImagesAfter(sender))
+        return .copy
+    }
+
+    /// The lower half of the text (or anywhere in nested text) means after the block.
+    private func placesImagesAfter(_ sender: NSDraggingInfo) -> Bool {
+        isNestedText || convert(sender.draggingLocation, from: nil).y > bounds.midY
     }
 
     // MARK: Copy & paste
@@ -540,13 +678,7 @@ final class BlockNSTextView: NSTextView {
 
     /// Several blocks: a lossless copy for Plico plus readable plain text.
     private func writeBlocks(_ paragraphs: [PastedParagraph]) {
-        guard !paragraphs.isEmpty else { return }
-        pasteboard.clearContents()
-        pasteboard.declareTypes([.string, .smartNotesBlocks], owner: nil)
-        pasteboard.setString(BlockEditing.plainText(of: paragraphs), forType: .string)
-        if let data = try? PasteConverter.encode(paragraphs) {
-            pasteboard.setData(data, forType: .smartNotesBlocks)
-        }
+        BlockClipboard.write(paragraphs, to: pasteboard)
     }
 
     /// Rich paste: RTF/HTML map to supported marks and blocks; multiple
@@ -577,6 +709,26 @@ final class BlockNSTextView: NSTextView {
     /// could leave it laid out for the wrong width (blocks overlapping).
     func height(forWidth width: CGFloat, minimumLineHeight: CGFloat) -> CGFloat {
         guard let text = textStorage, text.length > 0, width > 0 else { return minimumLineHeight }
+        // SwiftUI asks again on every layout pass (resizing a picture, a window,
+        // dragging a row); measuring is real work, so answers are kept until
+        // the text changes.
+        if heightCacheMinimum != minimumLineHeight || heightCacheText?.isEqual(to: text) != true {
+            heightCache.removeAll()
+            heightCacheText = NSAttributedString(attributedString: text)
+            heightCacheMinimum = minimumLineHeight
+        }
+        if let cached = heightCache[width] { return cached }
+        let height = measuredHeight(of: text, width: width, minimumLineHeight: minimumLineHeight)
+        if heightCache.count > 16 { heightCache.removeAll() }
+        heightCache[width] = height
+        return height
+    }
+
+    private var heightCache: [CGFloat: CGFloat] = [:]
+    private var heightCacheText: NSAttributedString?
+    private var heightCacheMinimum: CGFloat = 0
+
+    private func measuredHeight(of text: NSAttributedString, width: CGFloat, minimumLineHeight: CGFloat) -> CGFloat {
         let storage = NSTextStorage(attributedString: text)
         let layout = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude))
@@ -604,8 +756,19 @@ final class BlockNSTextView: NSTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // Fallback for `_setWatchingSuperviewClipView:` below, should AppKit rename it.
+        NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
         applyPendingFocus()
     }
+
+    /// A text view with a superview observes the frame changes of *every*
+    /// view, waiting for a clip view to adopt it (a scroll view's document;
+    /// rows never are one). With one text view per row, each layout pass
+    /// sent every view's frame change to every row: the cost grew with the
+    /// square of the rows, about half the time of opening a note or resizing
+    /// the window. Overriding AppKit's private switch turns that off.
+    @objc(_setWatchingSuperviewClipView:)
+    private func setWatchingSuperviewClipView(_ watching: Bool) {}
 
     private func applyPendingFocus() {
         guard let offset = pendingFocusOffset, let window else { return }
@@ -615,6 +778,34 @@ final class BlockNSTextView: NSTextView {
         let location = min(max(offset, 0), total)
         setSelectedRange(NSRange(location: location, length: min(pendingFocusLength, total - location)))
         if pendingFocusScrolls { scrollRangeToVisible(selectedRange()) }
+    }
+
+    // MARK: Nested rows
+
+    var onRowFrames: (([NestedRowFrame]) -> Void)?
+    private var reportedRowFrames: [NestedRowFrame]?
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        // A new width rewraps the text, moving the rows.
+        reportRowFrames()
+    }
+
+    /// Tells the nested text editor where its rows start. Reported on the next
+    /// run-loop turn, since this runs during layout and SwiftUI updates.
+    func reportRowFrames() {
+        guard onRowFrames != nil else { return }
+        let frames = rowFrames()
+        guard frames != reportedRowFrames else { return }
+        reportedRowFrames = frames
+        DispatchQueue.main.async { [weak self] in self?.onRowFrames?(frames) }
+    }
+
+    /// Where each row of the nested text starts (see `BlockEditing.nestedRows`).
+    func rowFrames() -> [NestedRowFrame] {
+        BlockEditing.nestedRows(in: RichText(plain: string)).map { row in
+            NestedRowFrame(range: row, frame: lineRect(at: row.lowerBound).offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y))
+        }
     }
 
     var isCaretOnFirstLine: Bool {

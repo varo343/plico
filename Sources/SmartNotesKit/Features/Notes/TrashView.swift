@@ -15,10 +15,15 @@ struct TrashView: View {
                     LazyVStack(spacing: 2) {
                         ForEach(model.trashed) { note in
                             TrashRow(note: note, restore: { model.restore(note.id) }, delete: { pendingDelete = note })
+                                .glidingHoverRow(note.id)
                         }
                     }
+                    .glidingHover(color: SNColor.borderSubtle.opacity(0.35))
                     .padding(.horizontal, SNSpacing.xs)
                 }
+                EmptyTrashButton(model: model)
+                    .frame(maxWidth: .infinity)
+                    .padding(SNSpacing.s)
             }
         }
         .confirmDestructiveAction(
@@ -50,37 +55,48 @@ private struct TrashRow: View {
                     Text("Deleted \(deletedAt.formatted(.relative(presentation: .named)))")
                         .font(.system(size: 11))
                         .foregroundStyle(SNColor.textSecondary)
+                        .lineLimit(1)
                 }
                 Spacer()
-                Button(action: restore) {
-                    HStack(spacing: 4) {
-                        MotionIcon(symbol: "arrow.uturn.backward", size: 11, weight: .semibold)
-                        Text("Restore")
-                    }
-                }
-                .buttonStyle(SNCapsuleButtonStyle())
-                Button(action: delete) {
-                    MotionIcon(symbol: "xmark.bin", size: 12)
-                }
-                .buttonStyle(SNIconButtonStyle(shape: .capsule))
-                .hoverLabel("Delete permanently…")
-                .accessibilityLabel("Delete \(note.displayTitle) permanently")
+                actions
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SNSpacing.s)
         .padding(.vertical, 10)
-        .background(isHovered ? SNColor.borderSubtle.opacity(0.35) : .clear, in: RoundedRectangle(cornerRadius: SNRadius.standard))
+        .contentShape(RoundedRectangle(cornerRadius: SNRadius.standard))
+        // The hover highlight is the list's (`glidingHover`); hovering still shows the actions.
         .onHover { isHovered = $0 }
+        .snAnimation(SNMotion.hover, value: isHovered)
         .accessibilityElement(children: .contain)
         .contextMenu {
             Button("Restore", action: restore)
             Button("Delete Permanently…", role: .destructive, action: delete)
         }
     }
+
+    /// Shown on hover only; the space stays reserved so the date doesn't reflow.
+    private var actions: some View {
+        HStack(spacing: 2) {
+            Button(action: restore) {
+                MotionIcon(symbol: "arrow.uturn.backward", size: 12)
+            }
+            .buttonStyle(SNIconButtonStyle(shape: .capsule))
+            .hoverLabel("Restore")
+            .accessibilityLabel("Restore \(note.displayTitle)")
+            Button(action: delete) {
+                MotionIcon(symbol: "trash", size: 12)
+            }
+            .buttonStyle(SNIconButtonStyle(shape: .capsule))
+            .hoverLabel("Delete permanently…")
+            .accessibilityLabel("Delete \(note.displayTitle) permanently")
+        }
+        .opacity(isHovered ? 1 : 0)
+        .allowsHitTesting(isHovered)
+    }
 }
 
-/// "Empty Trash…" in the header, with its confirmation.
+/// "Empty Trash…" below the list, with its confirmation.
 struct EmptyTrashButton: View {
     let model: NotesModel
     @State private var confirm = false
@@ -89,7 +105,7 @@ struct EmptyTrashButton: View {
         Button { confirm = true } label: {
             HStack(spacing: 4) {
                 MotionIcon(symbol: "trash", size: 11, weight: .semibold)
-                Text("Empty")
+                Text("Empty Trash")
             }
         }
         .buttonStyle(SNCapsuleButtonStyle(isDestructive: true))

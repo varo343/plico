@@ -1,13 +1,64 @@
 import Foundation
 
-/// "/checkbox", "/bullet"… typed in a block turn it into that kind.
+/// "/checkbox", "/bullet"… typed in a block turn it into that kind;
+/// "/nested" adds nested text under it; "/high", "/medium", "/low", "/custom"
+/// (all found by "/tag") tag it.
 public struct SlashCommand: Equatable, Sendable, Identifiable {
+    public enum Action: Equatable, Sendable {
+        case turnInto(BlockType)
+        case tag(BlockTag)
+        /// Asks for a custom tag name.
+        case customTag
+        case removeTag
+        /// Opens the block's nested text, ready to write.
+        case nestedText
+        /// Moves the block to the note's other column (starting it if needed).
+        case otherColumn
+        /// Asks for pictures to put in below the block.
+        case image
+    }
+
+    /// Groups in the slash menu, in this order.
+    public enum Section: Sendable {
+        case turnInto, add, tag
+    }
+
     public let name: String
     public let aliases: [String]
     public let title: String
-    public let type: BlockType
+    public let action: Action
 
     public var id: String { name }
+
+    /// The block kind this command turns a block into; nil for tag commands.
+    public var type: BlockType? {
+        if case .turnInto(let type) = action { type } else { nil }
+    }
+
+    public var section: Section {
+        switch action {
+        case .turnInto: .turnInto
+        case .nestedText, .otherColumn, .image: .add
+        case .tag, .customTag, .removeTag: .tag
+        }
+    }
+
+    public var isTagCommand: Bool { section == .tag }
+
+    private init(name: String, aliases: [String], title: String, type: BlockType) {
+        self.init(name: name, aliases: aliases, title: title, action: .turnInto(type))
+    }
+
+    private init(name: String, aliases: [String], title: String, action: Action) {
+        self.name = name
+        self.aliases = aliases
+        self.title = title
+        self.action = action
+    }
+
+    /// Shared by every tag command, so "/tag" lists them all. Never applied by
+    /// itself: it is ambiguous, so `exact` ignores it.
+    private static let tagAliases = ["tag", "priority", "severity", "etichetta", "priorita"]
 
     public static let all: [SlashCommand] = [
         SlashCommand(name: "text", aliases: ["paragraph", "body", "testo"], title: "Text", type: .paragraph),
@@ -18,6 +69,16 @@ public struct SlashCommand: Equatable, Sendable, Identifiable {
         SlashCommand(name: "bullet", aliases: ["list", "bullets", "ul", "elenco"], title: "Bulleted list", type: .bulletItem),
         SlashCommand(name: "numbered", aliases: ["number", "ol", "numeri"], title: "Numbered list", type: .numberedItem),
         SlashCommand(name: "quote", aliases: ["blockquote", "citazione"], title: "Quote", type: .quote),
+        SlashCommand(name: "nested", aliases: ["nest", "detail", "details", "toggle", "innestato", "dettagli"], title: "Nested text",
+                     action: .nestedText),
+        SlashCommand(name: "image", aliases: ["picture", "photo", "img", "immagine", "foto"], title: "Image…", action: .image),
+        SlashCommand(name: "column", aliases: ["columns", "split", "colonna", "colonne"], title: "Move to other column",
+                     action: .otherColumn),
+        SlashCommand(name: "high", aliases: tagAliases + ["urgent", "alta", "p1"], title: "High", action: .tag(.priority(.high))),
+        SlashCommand(name: "medium", aliases: tagAliases + ["media", "p2"], title: "Medium", action: .tag(.priority(.medium))),
+        SlashCommand(name: "low", aliases: tagAliases + ["bassa", "p3"], title: "Low", action: .tag(.priority(.low))),
+        SlashCommand(name: "custom", aliases: tagAliases + ["label", "personalizzato"], title: "Custom tag…", action: .customTag),
+        SlashCommand(name: "untag", aliases: tagAliases + ["notag", "removetag"], title: "Remove tag", action: .removeTag),
     ]
 
     /// Commands whose name or an alias starts with `query` (case-insensitive);
@@ -30,10 +91,12 @@ public struct SlashCommand: Equatable, Sendable, Identifiable {
         return byName + byAlias
     }
 
-    /// The command named exactly `query` (name or alias), if any.
+    /// The command named exactly `query` (name or alias), if exactly one matches.
+    /// "/tag" names several commands, so it opens the menu instead of applying one.
     public static func exact(_ query: String) -> SlashCommand? {
         let q = query.lowercased()
-        return all.first { $0.name == q || $0.aliases.contains(q) }
+        let found = all.filter { $0.name == q || $0.aliases.contains(q) }
+        return found.count == 1 ? found[0] : nil
     }
 }
 
@@ -80,12 +143,21 @@ public enum SlashTrigger {
 }
 
 extension BlockEditing {
-    /// Removes the typed "/command" text and turns the block into `type`.
-    public static func applySlashCommand(_ note: Note, blockID: UUID, removing range: Range<Int>, type: BlockType) throws -> Result {
+    /// Removes the typed "/command" text and applies the command: changes the
+    /// kind or the tag. `.customTag` only removes the text; the name is asked next.
+    public static func applySlashCommand(_ note: Note, blockID: UUID, removing range: Range<Int>, action: SlashCommand.Action) throws -> Result {
         guard let index = note.blocks.firstIndex(where: { $0.id == blockID }) else { throw Error.blockNotFound }
         var note = note
         note.blocks[index].content = note.blocks[index].content.replacing(range, with: .empty)
-        note = setType(note, blockID: blockID, to: type) ?? note
+        switch action {
+        case .turnInto(let type): note = setType(note, blockID: blockID, to: type) ?? note
+        case .tag(let tag): note = setTag(note, blockID: blockID, to: tag) ?? note
+        case .removeTag: note = setTag(note, blockID: blockID, to: nil) ?? note
+        case .otherColumn:
+            let column = note.blocks[index].column == 0 ? 1 : 0
+            note = moveToColumn(note, blockIDs: [blockID], column: column) ?? note
+        case .customTag, .nestedText, .image: break
+        }
         return Result(note: note, focusBlockID: blockID, focusOffset: range.lowerBound)
     }
 }

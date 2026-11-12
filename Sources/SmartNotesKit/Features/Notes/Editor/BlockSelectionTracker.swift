@@ -22,9 +22,13 @@ final class BlockSelectionTracker {
 
     /// The block position under a window point. Above the first block maps to
     /// its start, below the last to its end; between blocks, the next block.
-    func position(atWindowPoint point: NSPoint) -> BlockPosition? {
+    /// - Parameter column: only that column's blocks (a drag stays in the
+    ///   column it started in: side by side, the left column's rows are at the
+    ///   same heights as the right one's, and matched first, selecting both).
+    func position(atWindowPoint point: NSPoint, inColumn column: Int? = nil) -> BlockPosition? {
         guard let blocks = model?.note.blocks else { return nil }
-        let ordered = blocks.compactMap { block in views[block.id]?.view.map { (block.id, $0) } }
+        let ordered = blocks.filter { column == nil || $0.column == column }
+            .compactMap { block in views[block.id]?.view.map { (block.id, $0) } }
         guard let last = ordered.last else { return nil }
         for (id, view) in ordered {
             let local = view.convert(point, from: nil) // text views are flipped

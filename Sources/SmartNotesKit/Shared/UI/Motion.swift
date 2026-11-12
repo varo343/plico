@@ -8,6 +8,11 @@ enum SNMotion {
     static let hover = Animation.easeOut(duration: 0.14)
     /// Selection changes, menus opening, layout changes.
     static let snappy = Animation.snappy(duration: 0.24)
+    /// A menu's highlight gliding from row to row: there in ~0.1 s, no bounce,
+    /// keeping its speed when the pointer moves on before it arrives.
+    static let glide = Animation.spring(duration: 0.1, bounce: 0)
+    /// The highlight showing or hiding as the pointer enters or leaves a menu.
+    static let highlightFade = Animation.easeOut(duration: 0.08)
 }
 
 private struct ReduceMotionAwareAnimation<Value: Equatable>: ViewModifier {
